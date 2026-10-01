@@ -166,6 +166,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .seg{display:flex;gap:4px}
 .seg button{flex:1;height:34px;border-radius:10px;background:var(--surface-2);font-size:13px;font-weight:600;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.save-actions{display:flex;gap:10px}
+.save-actions .btn{flex:1;height:54px;font-size:17px}
+.save-del{background:var(--surface);color:var(--rec);box-shadow:var(--shadow)}
+.save-keep{background:var(--accent);color:#fff}
 .close{font-size:13px;font-weight:600;color:var(--muted);padding:6px 10px;border-radius:10px;background:var(--surface-2)}
 
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);
@@ -290,6 +294,17 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     <span id="wavInfo" style="font-size:12px;color:var(--muted);text-align:center"></span>
   </div>
 </div>
+<div class="sheet" id="saveSheet" hidden role="dialog" aria-label="録音を保存しますか">
+  <h3>この録音を保存しますか？</h3>
+  <div class="sheet-body">
+    <div class="set-row"><span class="lbl" id="saveName"></span><span class="sub" id="saveInfo"></span>
+      <button class="mini play" id="savePlay" style="justify-self:start">▶ 聴いてみる</button></div>
+    <div class="save-actions">
+      <button class="btn save-del" id="saveDiscard">削除</button>
+      <button class="btn save-keep" id="saveKeep">保存</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -305,7 +320,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /* ---------- settings ---------- */
 const settings = Object.assign({
-  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, playInSilent: true, currentId: null
+  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, playInSilent: true, currentId: null
 }, LS.get('pm.settings', {}));
 const saveSettings = () => LS.set('pm.settings', settings);
 
@@ -653,15 +668,38 @@ function recStop(){
   if (!notes.length) { toast('鍵盤が弾かれていないので、保存しませんでした'); setStatus(); return; }
   const end = Math.max(...notes.map(n => n[1] + n[2]));
   const len = Math.max(bar, Math.ceil(end / bar - 0.02) * bar);
-  const s = cur();
-  const num = (s.takes.reduce((m, t) => Math.max(m, parseInt((t.name.match(/\d+/) || [0])[0], 10) || 0), 0)) + 1;
-  s.takes.unshift({ id: 't' + uid(), name: 'テイク ' + num, bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, notes, len, createdAt: Date.now() });
-  touchSong(s);
-  renderTakes();
-  $('#takes').scrollTop = 0; // new take is listed first
-  toast('テイク ' + num + ' を保存しました。上の「録音一覧」で聴けます');
+  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, notes, len, createdAt: Date.now() } };
+  $('#saveInfo').textContent = (len / bar) + '小節 · ' + rec.bpm + 'BPM · ' + (RHYTHMS[rec.rhythm] || 'クリック');
+  $('#saveName').textContent = 'メモ' + nextMemoNo();
+  openSheet('#saveSheet');
   setStatus();
 }
+/* ---------- 録音のあと：削除か保存か ---------- */
+let pending = null;
+// メモ番号は全曲を通して増やす（削除した番号も再利用しない）
+function nextMemoNo(){
+  let max = settings.memoNo || 0;
+  Object.values(songs).forEach(s => s.takes.forEach(t => { const m = /^メモ\s*(\d+)$/.exec(t.name); if (m) max = Math.max(max, +m[1]); }));
+  return max + 1;
+}
+function closePending(){
+  if (pending && play.id === pending.take.id) stopPlayback();
+  pending = null; closeSheets();
+}
+$('#saveDiscard').addEventListener('click', () => { closePending(); toast('削除しました'); });
+$('#saveKeep').addEventListener('click', () => {
+  if (!pending) return;
+  const s = songs[pending.songId] || cur() || newSong('');
+  const no = nextMemoNo();
+  pending.take.name = 'メモ' + no; settings.memoNo = no; saveSettings();
+  s.takes.unshift(pending.take);
+  touchSong(s);
+  closePending();
+  renderTakes();
+  $('#takes').scrollTop = 0; // new take is listed first
+  toast('メモ' + no + ' を保存しました。上の「録音一覧」で聴けます');
+});
+$('#savePlay').addEventListener('click', () => { if (pending) playTake(pending.take); });
 function lockTempo(on){
   ['#bpmDown', '#bpmUp', '#bpmRange', '#tapBtn', '#rhythmSel'].forEach(s => { $(s).disabled = on; });
   $('#meter').querySelectorAll('button').forEach(b => { b.disabled = on; });
@@ -808,8 +846,9 @@ function frame(){
     if (rec.active) {
       const b = (now - rec.start) / (60 / rec.bpm);
       if (b < 0) setStatus(b < -rec.beats ? '次の小節から録音…' : 'カウント ' + Math.ceil(-b));
-      else setStatus('停止して保存（' + (Math.floor(b / rec.beats) + 1) + '小節目）');
+      else setStatus('停止（' + (Math.floor(b / rec.beats) + 1) + '小節目）');
     }
+    if (pending) { const l = play.id === pending.take.id ? '■ 止める' : '▶ 聴いてみる'; if ($('#savePlay').textContent !== l) $('#savePlay').textContent = l; }
     if (play.id) {
       const b = (now - play.t0) * play.take.bpm / 60;
       const on = new Set(play.take.notes.filter(n => b >= n[1] && b < n[1] + n[2]).map(n => n[0]));
@@ -824,7 +863,7 @@ function frame(){
 /* ---------- rendering ---------- */
 function setStatus(text){
   const el = $('#recLabel');
-  if (text == null) text = rec.active ? '停止して保存' : '録音';
+  if (text == null) text = rec.active ? '停止' : '録音';
   if (el.textContent !== text) el.textContent = text;
 }
 function renderTempo(){
@@ -940,7 +979,7 @@ function renderSettings(){
 let toastT = null;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
 function openSheet(id){ $('#scrim').hidden = false; $(id).hidden = false; }
-function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; }
+function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; pending = null; }
 let lock = null;
 async function wakeLock(on){
   try {
@@ -1011,7 +1050,7 @@ $('#copyLyrics').addEventListener('click', () => {
 
 $('#openSongs').addEventListener('click', () => { renderSongList(); openSheet('#songsSheet'); });
 $('#openSettings').addEventListener('click', () => { renderSettings(); openSheet('#settingsSheet'); });
-$('#scrim').addEventListener('click', closeSheets);
+$('#scrim').addEventListener('click', () => { if (!pending) closeSheets(); });
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 $('#newSong').addEventListener('click', () => {
   if (rec.active) recStop(); stopPlayback();
