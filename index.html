@@ -557,6 +557,7 @@ function recStop(){
   s.takes.unshift({ id: 't' + uid(), name: 'テイク ' + num, bpm: rec.bpm, beats: rec.beats, notes, len, createdAt: Date.now() });
   touchSong(s);
   renderTakes();
+  $('#takes').scrollTop = 0; // new take is listed first
   toast('テイク ' + num + ' を保存しました（' + (len / bar) + '小節）');
   setStatus();
 }
