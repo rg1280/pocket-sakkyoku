@@ -109,11 +109,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .takes{flex:1;min-height:0;overflow-y:auto;padding:8px 16px 6px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
 .take{background:var(--surface);border-radius:12px;padding:8px 10px;display:grid;gap:6px;box-shadow:var(--shadow)}
 .take.playing{outline:2px solid var(--accent)}
-.take-head{display:flex;align-items:center;gap:8px}
-.take-name{flex:1;min-width:0;border:0;background:transparent;font-weight:700;font-size:15px;padding:2px 0}
+.take-head{display:flex;align-items:center;gap:4px 8px;flex-wrap:wrap}
+.take-name{flex:1 1 60%;min-width:0;border:0;background:transparent;font-weight:700;font-size:15px;padding:2px 0}
 .take-meta{font-size:11.5px;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
 .take canvas{width:100%;height:40px;display:block;border-radius:8px;background:var(--surface-2)}
-.take-btns{display:flex;gap:6px;align-items:center}
+.take-btns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mini{white-space:nowrap}
 .mini{height:30px;padding:0 12px;border-radius:10px;background:var(--surface-2);font-size:13px;font-weight:600}
 .mini.play{background:var(--accent-soft);color:var(--accent)}
 .mini.danger{color:var(--rec)}
@@ -881,7 +882,7 @@ function renderTakes(){
     name.setAttribute('aria-label', 'テイク名');
     name.addEventListener('change', () => { t.name = name.value.trim() || t.name; touchSong(s); });
     const meta = document.createElement('span'); meta.className = 'take-meta';
-    meta.textContent = t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '');
+    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '');
     head.append(name, meta);
     const c = document.createElement('canvas');
     const btns = document.createElement('div'); btns.className = 'take-btns';
@@ -900,10 +901,9 @@ function renderTakes(){
       if (play.id === t.id) stopPlayback();
       s.takes = s.takes.filter(x => x.id !== t.id); touchSong(s); renderTakes(); toast('削除しました');
     });
-    const date = document.createElement('span'); date.className = 'take-meta'; date.textContent = fmtDate(t.createdAt);
     const wv = document.createElement('button'); wv.className = 'mini'; wv.textContent = '音で保存';
     wv.addEventListener('click', () => openWav(s, t));
-    btns.append(pb, wv, tempo, date, del);
+    btns.append(pb, wv, tempo, del);
     el.append(head, c, btns);
     box.appendChild(el);
     requestAnimationFrame(() => drawRoll(c, t, null));
