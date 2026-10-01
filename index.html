@@ -90,7 +90,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .meter button::after{content:" ▾";font-size:10px;color:var(--muted)}
 .btn{white-space:nowrap}
 #bpmRange{width:100%;accent-color:var(--accent);height:18px;margin:0}
-.beats{display:flex;gap:6px;flex:1;min-width:120px;align-items:center}
+.beats{display:flex;gap:6px;flex:1;min-width:100px;align-items:center}
+#rhythmSel{height:32px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:13px;padding:0 10px;max-width:46%}
 .beats span{flex:1;height:6px;border-radius:3px;background:var(--surface-2);transition:background .05s}
 .beats span.first{height:9px}
 .beats span.on{background:var(--accent)}
@@ -206,6 +207,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <input type="range" id="bpmRange" min="40" max="220" step="1" value="92" aria-label="テンポ">
       <div class="row">
         <div class="beats" id="beats"></div>
+        <select id="rhythmSel" aria-label="リズムの種類"><option value="click">クリック</option><option value="8beat">8ビート</option><option value="16beat">16ビート</option><option value="4uchi">4つ打ち</option><option value="ballad">バラード</option><option value="shuffle">シャッフル</option></select>
       </div>
       <div class="actions">
         <button class="btn btn-metro" id="metroBtn" aria-pressed="false">リズムを鳴らす</button>
@@ -250,7 +252,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <h3>設定 <button class="close" data-close>閉じる</button></h3>
   <div class="sheet-body">
     <div class="set-row"><span class="lbl">鍵盤の音量</span><input type="range" id="pianoVol" min="0" max="100" value="80" aria-label="鍵盤の音量"></div>
-    <div class="set-row"><span class="lbl">リズム（クリック）の音量</span><input type="range" id="clickVol" min="0" max="100" value="60" aria-label="クリックの音量"></div>
+    <div class="set-row"><span class="lbl">リズム（クリック・ドラム）の音量</span><input type="range" id="clickVol" min="0" max="100" value="60" aria-label="リズムの音量"></div>
     <div class="set-row"><span class="lbl">鍵盤の表記</span>
       <div class="seg" id="labelSeg"><button data-v="doremi">ドレミ</button><button data-v="abc">CDE</button><button data-v="none">なし</button></div></div>
     <div class="set-row"><span class="lbl">再生するときもリズムを鳴らす</span>
@@ -272,9 +274,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <div class="sheet-body">
     <div class="set-row"><span class="lbl" id="wavTitle"></span>
       <span class="sub">弾いたメロディーを音のファイル（.wav）にします。iPhoneの「ファイル」に保存したり、AirDrop・LINEで送ったり、SUNOに読み込ませたりできます。</span></div>
-    <div class="set-row"><span class="lbl">リズム（クリック音）</span>
+    <div class="set-row"><span class="lbl">リズム（クリック・ドラム）</span>
       <div class="seg" id="wavClickSeg"><button data-v="0">入れない</button><button data-v="1">入れる</button></div>
-      <span class="sub">SUNOに渡すなら「入れない」がおすすめです。</span></div>
+      <span class="sub">「入れる」にすると、録音したときのリズム（8ビートなど）が入ります。SUNOに渡すなら「入れない」がおすすめです。</span></div>
     <button class="new-song" id="wavMake">音のファイルを作る</button>
     <button class="new-song" id="wavShare" hidden>保存・送る</button>
     <span id="wavInfo" style="font-size:12px;color:var(--muted);text-align:center"></span>
@@ -295,7 +297,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /* ---------- settings ---------- */
 const settings = Object.assign({
-  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, clickOnPlay: true, playInSilent: true, currentId: null
+  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, playInSilent: true, currentId: null
 }, LS.get('pm.settings', {}));
 const saveSettings = () => LS.set('pm.settings', settings);
 
@@ -477,6 +479,84 @@ function click(when, level, dest, ac = ctx){ // level 2=downbeat 1=secondary 0=n
 }
 const beatLevel = (i, beats) => i === 0 ? 2 : (beats === 6 && i === 3) ? 1 : 0;
 
+/* ---------- drums ---------- */
+const RHYTHMS = { click: 'クリック', '8beat': '8ビート', '16beat': '16ビート', '4uchi': '4つ打ち', ballad: 'バラード', shuffle: 'シャッフル' };
+const noiseBufs = new WeakMap();
+function noise(ac){
+  let b = noiseBufs.get(ac);
+  if (!b) {
+    b = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.5), ac.sampleRate);
+    const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    noiseBufs.set(ac, b);
+  }
+  const src = ac.createBufferSource(); src.buffer = b; return src;
+}
+function kick(ac, dest, t, v = 1){
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.0 * v, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + 0.4);
+}
+function snare(ac, dest, t, v = 1){
+  const n = noise(ac), hp = ac.createBiquadFilter(), g = ac.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 1400;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.55 * v, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + 0.22);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.45 * v, t + 0.003);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  o.connect(og).connect(dest); o.start(t); o.stop(t + 0.14);
+}
+function hat(ac, dest, t, v = 1, open = false){
+  const n = noise(ac), hp = ac.createBiquadFilter(), g = ac.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 7500;
+  const len = open ? 0.28 : 0.05;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * v, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + len + 0.02);
+}
+const range = (n, step) => Array.from({ length: Math.round(n / step) }, (_, i) => +(i * step).toFixed(4));
+const PATTERNS_4 = {
+  '8beat':   { k: [0, 2, 2.5], s: [1, 3], h: range(4, .5) },
+  '16beat':  { k: [0, 1.75, 2.5], s: [1, 3], h: range(4, .25) },
+  '4uchi':   { k: [0, 1, 2, 3], s: [1, 3], h: [], o: [.5, 1.5, 2.5, 3.5] },
+  'ballad':  { k: [0, 2.5], s: [2], h: range(4, .5) },
+  'shuffle': { k: [0, 2], s: [1, 3], h: [0, 2/3, 1, 5/3, 2, 8/3, 3, 11/3] }
+};
+const barCache = {};
+function barHits(rhythm, beats){
+  const key = rhythm + '/' + beats;
+  if (barCache[key]) return barCache[key];
+  const p4 = PATTERNS_4[rhythm]; let p;
+  if (beats === 4) p = p4;
+  else if (beats === 2) p = { k: p4.k.filter(x => x < 2), s: [1], h: p4.h.filter(x => x < 2), o: (p4.o || []).filter(x => x < 2) };
+  else if (beats === 3) p = rhythm === '4uchi' ? { k: [0, 1, 2], s: [], h: [], o: [.5, 1.5, 2.5] }
+                         : { k: [0], s: [1, 2], h: rhythm === '16beat' ? range(3, .25) : rhythm === 'shuffle' ? [0, 2/3, 1, 5/3, 2, 8/3] : range(3, .5) };
+  else p = rhythm === '4uchi' ? { k: [0, 3], s: [], h: [], o: [1.5, 4.5] } // 6/8: one beat = an eighth note
+                              : { k: [0, rhythm === 'ballad' ? 5 : 2.5].filter(x => rhythm !== 'shuffle' || x === 0), s: [3], h: range(6, rhythm === '16beat' ? .5 : 1) };
+  const hits = [];
+  (p.k || []).forEach(x => hits.push([x, 'k'])); (p.s || []).forEach(x => hits.push([x, 's']));
+  (p.h || []).forEach(x => hits.push([x, 'h'])); (p.o || []).forEach(x => hits.push([x, 'o']));
+  return (barCache[key] = hits);
+}
+// one beat of rhythm: a click, or the drum hits that fall inside this beat
+function beatSound(t, i, beats, rhythm, secPerBeat, dest, ac = ctx){
+  if (!RHYTHMS[rhythm] || rhythm === 'click') { click(t, beatLevel(i, beats), dest, ac); return; }
+  const d = dest || clickBus;
+  barHits(rhythm, beats).forEach(([x, type]) => {
+    if (x < i - 1e-6 || x >= i + 1 - 1e-6) return;
+    const at = t + (x - i) * secPerBeat;
+    const onBeat = Math.abs(x - Math.round(x)) < 1e-6;
+    if (type === 'k') kick(ac, d, at);
+    else if (type === 's') snare(ac, d, at);
+    else if (type === 'h') hat(ac, d, at, onBeat ? 1 : 0.6);
+    else hat(ac, d, at, 0.9, true);
+  });
+}
+
 /* ---------- metronome ---------- */
 const metro = { on: false, next: 0, idx: 0, timer: null, queue: [] };
 const spb = () => 60 / settings.bpm;
@@ -501,7 +581,7 @@ function metroStop(){
 function metroTick(){
   while (metro.next < ctx.currentTime + 0.12) {
     const b = settings.beats, i = metro.idx % b;
-    click(metro.next, beatLevel(i, b));
+    beatSound(metro.next, i, b, settings.rhythm, spb());
     metro.queue.push({ t: metro.next, i });
     metro.idx++; metro.next += spb();
   }
@@ -535,7 +615,7 @@ function recStart(){
   const fresh = !metro.on, t0 = ctx.currentTime + 0.1;
   if (fresh) metroStart(t0); // 1 bar count-in
   rec.active = true; rec.notes = []; rec.open.clear();
-  rec.bpm = settings.bpm; rec.beats = settings.beats;
+  rec.bpm = settings.bpm; rec.beats = settings.beats; rec.rhythm = settings.rhythm;
   rec.start = fresh ? t0 + spb() * settings.beats : nextDownbeat();
   rec.armedAt = ctx.currentTime;
   // notes held already while arming count from now
@@ -567,7 +647,7 @@ function recStop(){
   const len = Math.max(bar, Math.ceil(end / bar - 0.02) * bar);
   const s = cur();
   const num = (s.takes.reduce((m, t) => Math.max(m, parseInt((t.name.match(/\d+/) || [0])[0], 10) || 0), 0)) + 1;
-  s.takes.unshift({ id: 't' + uid(), name: 'テイク ' + num, bpm: rec.bpm, beats: rec.beats, notes, len, createdAt: Date.now() });
+  s.takes.unshift({ id: 't' + uid(), name: 'テイク ' + num, bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, notes, len, createdAt: Date.now() });
   touchSong(s);
   renderTakes();
   $('#takes').scrollTop = 0; // new take is listed first
@@ -575,7 +655,7 @@ function recStop(){
   setStatus();
 }
 function lockTempo(on){
-  ['#bpmDown', '#bpmUp', '#bpmRange', '#tapBtn'].forEach(s => { $(s).disabled = on; });
+  ['#bpmDown', '#bpmUp', '#bpmRange', '#tapBtn', '#rhythmSel'].forEach(s => { $(s).disabled = on; });
   $('#meter').querySelectorAll('button').forEach(b => { b.disabled = on; });
 }
 
@@ -598,7 +678,7 @@ function playTake(take){
   play.clickGain = ctx.createGain(); play.clickGain.connect(clickBus);
   if (settings.clickOnPlay) {
     for (let k = off; k < take.len; k++) {
-      const i = ((k % bar) + bar) % bar; click(t0 + k * b, beatLevel(i, bar), play.clickGain);
+      const i = ((k % bar) + bar) % bar; beatSound(t0 + k * b, i, bar, take.rhythm || 'click', b, play.clickGain);
     }
   }
   const dur = (take.len - off) * b + 0.3;
@@ -743,6 +823,7 @@ function renderTempo(){
   $('#bpmVal').textContent = settings.bpm;
   $('#bpmRange').value = settings.bpm;
   $('#meterBtn').textContent = settings.beats === 6 ? '6/8' : settings.beats + '/4';
+  $('#rhythmSel').value = RHYTHMS[settings.rhythm] ? settings.rhythm : 'click';
 }
 function fmtDate(ts){
   const d = new Date(ts);
@@ -787,14 +868,14 @@ function renderTakes(){
     name.setAttribute('aria-label', 'テイク名');
     name.addEventListener('change', () => { t.name = name.value.trim() || t.name; touchSong(s); });
     const meta = document.createElement('span'); meta.className = 'take-meta';
-    meta.textContent = t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節';
+    meta.textContent = t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '');
     head.append(name, meta);
     const c = document.createElement('canvas');
     const btns = document.createElement('div'); btns.className = 'take-btns';
     const pb = document.createElement('button'); pb.className = 'mini play'; pb.textContent = play.id === t.id ? '■ 止める' : '▶ 再生';
     pb.addEventListener('click', () => playTake(t));
     const tempo = document.createElement('button'); tempo.className = 'mini'; tempo.textContent = 'このテンポに';
-    tempo.addEventListener('click', () => { if (rec.active) return; settings.bpm = t.bpm; settings.beats = t.beats; saveSettings(); renderTempo(); buildBeats(); setStatus(); toast(t.bpm + ' BPM・' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' にしました'); });
+    tempo.addEventListener('click', () => { if (rec.active) return; settings.bpm = t.bpm; settings.beats = t.beats; if (t.rhythm) settings.rhythm = t.rhythm; saveSettings(); renderTempo(); buildBeats(); setStatus(); toast(t.bpm + ' BPM・' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' にしました'); });
     const del = document.createElement('button'); del.className = 'mini danger'; del.textContent = '削除'; del.style.marginLeft = 'auto';
     let armT = null;
     del.addEventListener('click', () => {
@@ -860,6 +941,7 @@ function setBpm(v){
   settings.bpm = clamp(Math.round(v), 40, 220); saveSettings(); renderTempo();
   if (metro.on) setStatus();
 }
+$('#rhythmSel').addEventListener('change', e => { settings.rhythm = e.target.value; saveSettings(); });
 $('#bpmDown').addEventListener('click', () => setBpm(settings.bpm - 1));
 $('#bpmUp').addEventListener('click', () => setBpm(settings.bpm + 1));
 $('#bpmRange').addEventListener('input', e => setBpm(+e.target.value));
@@ -1008,7 +1090,7 @@ async function renderWav(take, withClick){
   const cb = ac.createGain(); cb.gain.value = 0.5; cb.connect(comp);
   const t0 = 0.05 - off * b;
   take.notes.forEach(([p, st, d]) => { const v = voice(p, t0 + st * b, 0.85, ac, pb); v.stop(t0 + (st + d) * b); });
-  if (withClick) for (let k = off; k < take.len; k++) click(t0 + k * b, beatLevel(((k % bar) + bar) % bar, bar), cb, ac);
+  if (withClick) for (let k = off; k < take.len; k++) beatSound(t0 + k * b, ((k % bar) + bar) % bar, bar, take.rhythm || 'click', b, cb, ac);
   const buf = await ac.startRendering();
   const data = buf.getChannelData(0);
   let peak = 0; for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
