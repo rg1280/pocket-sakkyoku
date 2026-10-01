@@ -1191,7 +1191,8 @@ if (!Object.keys(songs).length) sampleSong();
 if (!songs[settings.currentId]) settings.currentId = latestSongId();
 saveSettings();
 renderAll();
-requestAnimationFrame(() => { buildKeyboard(); renderTakes(); });
+buildKeyboard(); renderTakes();
+requestAnimationFrame(() => { buildKeyboard(); renderTakes(); }); // again once the layout has its real width
 setStatus();
 requestAnimationFrame(frame);
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
