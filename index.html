@@ -86,7 +86,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .tap{padding:0 10px;height:32px;border-radius:10px;background:var(--surface-2);font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
 .meter{display:flex;gap:3px;margin-left:auto}
 .meter button{height:32px;padding:0 8px;border-radius:10px;background:var(--surface-2);font-family:var(--mono);font-size:13px;color:var(--muted)}
-.meter button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.meter button{min-width:64px;color:var(--ink);font-weight:600}
+.meter button::after{content:" ▾";font-size:10px;color:var(--muted)}
+.btn{white-space:nowrap}
 #bpmRange{width:100%;accent-color:var(--accent);height:18px;margin:0}
 .beats{display:flex;gap:6px;flex:1;min-width:120px;align-items:center}
 .beats span{flex:1;height:6px;border-radius:3px;background:var(--surface-2);transition:background .05s}
@@ -198,7 +200,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         </div>
         <button class="tap" id="tapBtn">TAP</button>
         <div class="meter" id="meter">
-          <button data-beats="2">2/4</button><button data-beats="3">3/4</button><button data-beats="4">4/4</button><button data-beats="6">6/8</button>
+          <button id="meterBtn" aria-label="拍子（押すたびに切り替え）">4/4</button>
         </div>
       </div>
       <input type="range" id="bpmRange" min="40" max="220" step="1" value="92" aria-label="テンポ">
@@ -726,7 +728,7 @@ function setStatus(text){
 function renderTempo(){
   $('#bpmVal').textContent = settings.bpm;
   $('#bpmRange').value = settings.bpm;
-  $('#meter').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.beats === settings.beats ? 'true' : 'false'));
+  $('#meterBtn').textContent = settings.beats === 6 ? '6/8' : settings.beats + '/4';
 }
 function fmtDate(ts){
   const d = new Date(ts);
@@ -854,7 +856,8 @@ $('#tapBtn').addEventListener('click', () => {
 });
 $('#meter').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
-  settings.beats = +b.dataset.beats; saveSettings(); renderTempo(); buildBeats();
+  const order = [2, 3, 4, 6];
+  settings.beats = order[(order.indexOf(settings.beats) + 1) % order.length]; saveSettings(); renderTempo(); buildBeats();
   if (metro.on) { metroStop(); metroStart(); }
 });
 $('#metroBtn').addEventListener('click', () => {
