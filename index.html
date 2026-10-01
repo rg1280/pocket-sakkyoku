@@ -1109,7 +1109,7 @@ $('#wavMake').addEventListener('click', async () => {
   try {
     const { blob, secs } = await renderWav(wav.take, wav.withClick);
     const clean = x => (x || '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
-    const name = [clean(wav.song.title) || 'メロディー', clean(wav.take.name), wav.take.bpm + 'bpm'].join('_') + (wav.withClick ? '_click' : '') + '.wav';
+    const name = [clean(wav.song.title) || 'メロディー', clean(wav.take.name), wav.take.bpm + 'bpm'].join('_') + (wav.withClick ? '_' + (wav.take.rhythm || 'click') : '') + '.wav';
     wav.file = new File([blob], name, { type: 'audio/wav' });
     btn.hidden = true; $('#wavShare').hidden = false;
     $('#wavInfo').textContent = name + '（' + Math.round(secs) + '秒・' + (blob.size / 1048576).toFixed(1) + 'MB）';
