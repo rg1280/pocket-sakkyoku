@@ -124,8 +124,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .kb-bar{display:flex;align-items:center;gap:8px;padding:2px 16px 4px}
 .kb-bar .range{font-family:var(--mono);font-size:12px;color:var(--muted);flex:1;text-align:center}
 .oct{height:30px;padding:0 12px;border-radius:10px;background:var(--surface);box-shadow:var(--shadow);font-size:13px;font-weight:600}
-.kb{display:flex;flex-direction:column;gap:6px;margin:0 8px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-.kb-row{position:relative;height:clamp(120px,21vh,190px)}
+.kb{display:flex;flex-direction:column;gap:6px;margin:0 8px;flex:1;min-height:0;max-height:560px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.kb-row{position:relative;flex:1;min-height:110px}
+#viewMelody .kb-bar{margin-top:auto;padding-top:8px}
+.takes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 16px 0;font-size:13px;color:var(--muted)}
+.takes-head span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kb .w{position:absolute;top:0;bottom:0;background:var(--key-white);border:1px solid var(--key-white-edge);border-radius:3px 3px 8px 8px;
   display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding-bottom:6px;gap:1px;box-shadow:inset 0 -6px 0 rgba(0,0,0,.06)}
 .kb .w .n{font-size:12px;font-weight:700;color:#4A4F5C}
@@ -187,8 +190,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   </header>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" id="tabMelody" aria-selected="true">メロディー</button>
-    <button role="tab" id="tabMemo" aria-selected="false">コンセプト・歌詞</button>
+    <button role="tab" id="tabMelody" aria-selected="true">鍵盤</button>
+    <button role="tab" id="tabTakes" aria-selected="false">録音一覧</button>
+    <button role="tab" id="tabMemo" aria-selected="false">歌詞・メモ</button>
   </nav>
 
   <section class="view" id="viewMelody">
@@ -215,8 +219,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       </div>
     </div>
 
-    <div class="takes" id="takes"></div>
-
     <div class="kb-bar">
       <button class="oct" id="octDown" aria-label="1オクターブ下へ">◀ 低く</button>
       <div class="range" id="kbRange"></div>
@@ -224,6 +226,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     </div>
     <div class="kb" id="kb" aria-label="鍵盤"><div class="kb-row" id="kbHi"></div><div class="kb-row" id="kbLo"></div></div>
     <div class="kb-pad"></div>
+  </section>
+
+  <section class="view" id="viewTakes" hidden>
+    <div class="takes-head"><span id="takesSong"></span><button class="mini" id="takesOtherSongs">ほかの曲</button></div>
+    <div class="takes" id="takes"></div>
   </section>
 
   <section class="view" id="viewMemo" hidden>
@@ -651,7 +658,7 @@ function recStop(){
   touchSong(s);
   renderTakes();
   $('#takes').scrollTop = 0; // new take is listed first
-  toast('テイク ' + num + ' を保存しました（' + (len / bar) + '小節）');
+  toast('テイク ' + num + ' を保存しました。上の「録音一覧」で聴けます');
   setStatus();
 }
 function lockTempo(on){
@@ -853,12 +860,18 @@ function drawRoll(c, take, head){
   });
   if (head != null) { g.fillStyle = cssVar('--ink'); g.fillRect(x(head), 0, 1.5, H); }
 }
+function renderTakesHead(){
+  const s = cur(), n = s ? s.takes.length : 0;
+  $('#tabTakes').textContent = '録音一覧' + (n ? '（' + n + '）' : '');
+  $('#takesSong').textContent = '曲：' + (s ? (s.title || 'タイトル未定') : '—');
+}
 function renderTakes(){
+  renderTakesHead();
   const box = $('#takes'); box.innerHTML = '';
   const s = cur();
   if (!s || !s.takes.length) {
     const p = document.createElement('div'); p.className = 'empty';
-    p.textContent = 'まだ録音がありません。「リズムを鳴らす」で練習して、弾けるようになったら「録音」を押してください。リズムが止まっているときは1小節カウントしてから録音が始まります。';
+    p.textContent = 'この曲にはまだ録音がありません。「鍵盤」のページで「録音」を押すと、ここに並びます。';
     box.appendChild(p); return;
   }
   s.takes.forEach(t => {
@@ -968,13 +981,16 @@ $('#octDown').addEventListener('click', () => { settings.lowOct = clamp(settings
 $('#octUp').addEventListener('click', () => { settings.lowOct = clamp(settings.lowOct + 1, 1, 5); saveSettings(); buildKeyboard(); });
 
 function tab(which){
-  const mel = which === 'melody';
-  $('#tabMelody').setAttribute('aria-selected', mel); $('#tabMemo').setAttribute('aria-selected', !mel);
-  $('#viewMelody').hidden = !mel; $('#viewMemo').hidden = mel;
-  if (mel) requestAnimationFrame(() => { buildKeyboard(); renderTakes(); });
+  [['melody', '#tabMelody', '#viewMelody'], ['takes', '#tabTakes', '#viewTakes'], ['memo', '#tabMemo', '#viewMemo']].forEach(([k, t, v]) => {
+    $(t).setAttribute('aria-selected', k === which ? 'true' : 'false'); $(v).hidden = k !== which;
+  });
+  if (which === 'melody') requestAnimationFrame(buildKeyboard);
+  if (which === 'takes') requestAnimationFrame(renderTakes);
 }
 $('#tabMelody').addEventListener('click', () => tab('melody'));
+$('#tabTakes').addEventListener('click', () => tab('takes'));
 $('#tabMemo').addEventListener('click', () => tab('memo'));
+$('#takesOtherSongs').addEventListener('click', () => { renderSongList(); openSheet('#songsSheet'); });
 
 let textT = null;
 function bindText(sel, field){
@@ -1128,7 +1144,7 @@ $('#wavShare').addEventListener('click', async () => {
   } catch (e) { if (!e || e.name !== 'AbortError') toast('保存できませんでした'); }
 });
 
-window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(() => { if (!$('#viewMelody').hidden) { buildKeyboard(); renderTakes(); } }, 150); });
+window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(() => { if (!$('#viewMelody').hidden) buildKeyboard(); if (!$('#viewTakes').hidden) renderTakes(); }, 150); });
 window.addEventListener('pagehide', () => { active.forEach((_, id) => release(id)); });
 
 /* ---------- boot ---------- */
