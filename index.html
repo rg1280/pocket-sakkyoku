@@ -162,6 +162,15 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .field .hint{font-size:12px;color:var(--muted)}
 .field textarea{width:100%;border:0;background:var(--surface-2);border-radius:10px;padding:10px 12px;line-height:1.75;resize:vertical;font-size:16px}
 #concept{min-height:120px} #lyrics{min-height:260px}
+#sunoPanel{display:grid;gap:10px}
+.suno-sub{font-size:12px;color:var(--muted);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{height:32px;padding:0 12px;border-radius:16px;background:var(--surface-2);font-size:13px;font-weight:600;color:var(--muted)}
+.chips button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.suno-box{display:grid;gap:6px}
+.suno-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px}
+.suno-box textarea{min-height:76px;font-family:var(--mono);font-size:12.5px;line-height:1.55}
+#sunoLyrics{min-height:140px}
 
 /* sheet */
 .scrim{position:fixed;inset:0;background:rgba(10,12,18,.45);z-index:20}
@@ -272,6 +281,20 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="field">
         <div class="field-head"><label for="lyrics">歌詞</label><button class="mini" id="copyLyrics">コピー</button></div>
         <textarea id="lyrics" placeholder="浮かんだフレーズを、断片のままでも"></textarea>
+      </div>
+      <div class="field" id="sunoField">
+        <div class="field-head"><label>Sunoへ渡す</label><button class="mini play" id="sunoToggle">Suno用に変換</button></div>
+        <div id="sunoPanel" hidden>
+          <span class="hint" id="sunoSrc"></span>
+          <div class="suno-sub">雰囲気（選ぶと曲調の英語に足されます）</div>
+          <div class="chips" id="sunoMoods"></div>
+          <div class="suno-box"><div class="suno-head"><b>① Style（曲調）</b><button class="mini" data-copy="sunoStyle">コピー</button></div><textarea id="sunoStyle" readonly></textarea></div>
+          <div class="suno-box"><div class="suno-head"><b>② Exclude（入れない要素）</b><button class="mini" data-copy="sunoExclude">コピー</button></div><textarea id="sunoExclude" readonly></textarea></div>
+          <div class="suno-box"><div class="suno-head"><b>③ Lyrics（歌詞）</b><button class="mini" data-copy="sunoLyrics">コピー</button></div><textarea id="sunoLyrics" readonly></textarea></div>
+          <div class="suno-box"><div class="suno-head"><b>④ メロディー（音のファイル）</b><button class="mini" id="sunoWav">最新のテイクを音で保存</button></div>
+            <span class="hint">Sunoの「Upload Audio（音声をアップロード）」で、保存した .wav を選びます。伴奏は「入れない」がおすすめです。</span></div>
+          <span class="hint">手順：Sunoアプリを開き、①②③をそれぞれの欄に貼って、④の音を付けて作成します。</span>
+        </div>
       </div>
     </div>
   </section>
@@ -1175,6 +1198,7 @@ function renderSong(){
   $('#concept').value = s ? s.concept : '';
   $('#lyrics').value = s ? s.lyrics : '';
   renderTakes();
+  if (typeof renderSuno === 'function') try { renderSuno(); } catch (e) {}
 }
 function renderSongList(){
   const box = $('#songList'); box.innerHTML = '';
@@ -1274,6 +1298,68 @@ $('#copyLyrics').addEventListener('click', () => {
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { $('#lyrics').select(); toast('選択しました。長押しでコピーしてください'); });
   else { $('#lyrics').select(); toast('選択しました。長押しでコピーしてください'); }
 });
+
+
+/* ---------- Sunoへ渡す ----------
+   曲調・除外の中身は suno/CLAUDE.md で本人と決めた好み（オルタナJ-ROCK・バンドサウンド・真剣・歪んだギター無し 等）。
+   ⚠ここに新しい好みを勝手に足さない。⚠"ballad" と書くとSunoがドラムを消すので使わない。 */
+const SUNO_BASE = ['alternative J-rock', 'Japanese male vocal', 'band sound with clean electric guitar, bass and live drums',
+  'clear driving rhythm', 'strong melody with wide leaps', 'slightly quirky arrangement', 'serious and earnest mood'];
+const SUNO_EXCLUDE = ['distorted guitar', 'heavy distortion', 'Rhodes piano', 'melisma', 'vocal runs', 'laid-back groove',
+  'generic pop ballad', 'predictable chord progression', 'uplifting', 'cheerful', 'bright', 'electronic', 'programmed beats'];
+const SUNO_MOODS = [
+  ['切ない', 'bittersweet, melancholic'], ['疾走感', 'driving, propulsive energy'], ['静かに始まる', 'starts quiet and builds up'],
+  ['力強いサビ', 'powerful anthemic chorus'], ['優しい歌声', 'gentle, intimate vocal delivery'], ['跳ねるリズム', 'bouncy syncopated groove'],
+  ['壮大', 'expansive, cinematic build'], ['都会的', 'urban, sophisticated harmony'], ['夜の雰囲気', 'late-night atmosphere']
+];
+const SUNO_RHYTHM = { '8beat': 'straight 8th-note rock beat', '16beat': '16th-note groove', '4uchi': 'four-on-the-floor beat',
+  ballad: 'half-time feel', shuffle: 'shuffle rhythm' };
+const keyEn = k => KEY_LABELS[k].replace('♭', '-flat').replace('♯', '-sharp') + ' major';
+function sunoTexts(song){
+  const t = song.takes[0]; // 最新のテイクのテンポ・キー・リズムを使う（無ければ今の設定）
+  const bpm = t ? t.bpm : settings.bpm, key = t && PROGS[t.prog] ? (t.key || 0) : settings.key, rhythm = t ? t.rhythm : settings.rhythm;
+  const moods = (song.moods || []).map(j => (SUNO_MOODS.find(m => m[0] === j) || [])[1]).filter(Boolean);
+  const style = [...SUNO_BASE, ...moods, SUNO_RHYTHM[rhythm], bpm + ' BPM', 'key of ' + keyEn(key), 'no intro'].filter(Boolean).join(', ');
+  let lyrics = (song.lyrics || '').trim();
+  // サビ先行：タグが無ければ [Chorus] を1つだけ付ける（タグを増やすとSunoが区切りで間を空けるため）
+  if (lyrics && !/\[[^\]]+\]/.test(lyrics)) lyrics = '[Chorus]\n' + lyrics;
+  const src = t ? '元にするテイク：' + t.name + '（' + bpm + 'BPM・キー' + KEY_LABELS[key] + '）' : '録音がまだ無いので、いまの設定（' + bpm + 'BPM・キー' + KEY_LABELS[key] + '）を使います';
+  return { style, exclude: SUNO_EXCLUDE.join(', '), lyrics: lyrics || '（歌詞がまだありません）', src };
+}
+function renderSuno(){
+  if ($('#sunoPanel').hidden) return;
+  const song = cur(); if (!song) return;
+  const x = sunoTexts(song);
+  $('#sunoSrc').textContent = x.src;
+  $('#sunoStyle').value = x.style; $('#sunoExclude').value = x.exclude; $('#sunoLyrics').value = x.lyrics;
+  const box = $('#sunoMoods'); box.innerHTML = '';
+  SUNO_MOODS.forEach(([ja]) => {
+    const b = document.createElement('button'); b.textContent = ja;
+    b.setAttribute('aria-pressed', (song.moods || []).includes(ja) ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      const ms = new Set(song.moods || []); ms.has(ja) ? ms.delete(ja) : ms.add(ja);
+      song.moods = [...ms]; touchSong(song); renderSuno();
+    });
+    box.appendChild(b);
+  });
+}
+$('#sunoToggle').addEventListener('click', () => {
+  const p = $('#sunoPanel'); p.hidden = !p.hidden;
+  $('#sunoToggle').textContent = p.hidden ? 'Suno用に変換' : '閉じる';
+  renderSuno();
+});
+document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
+  const ta = $('#' + b.dataset.copy), txt = ta.value;
+  const ok = () => { toast('コピーしました。Sunoの欄に貼ってください'); b.textContent = 'コピー済み'; setTimeout(() => { b.textContent = 'コピー'; }, 2000); };
+  const fallback = () => { ta.removeAttribute('readonly'); ta.select(); ta.setAttribute('readonly', ''); toast('選択しました。長押しでコピーしてください'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, fallback); else fallback();
+}));
+$('#sunoWav').addEventListener('click', () => {
+  const song = cur();
+  if (!song || !song.takes.length) { toast('この曲にはまだ録音がありません'); return; }
+  wav.withClick = false; openWav(song, song.takes[0]);
+});
+$('#lyrics').addEventListener('input', () => { clearTimeout(window.__sunoT); window.__sunoT = setTimeout(renderSuno, 300); });
 
 $('#openSongs').addEventListener('click', () => { renderSongList(); openSheet('#songsSheet'); });
 $('#openSettings').addEventListener('click', () => { renderSettings(); openSheet('#settingsSheet'); });
