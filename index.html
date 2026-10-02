@@ -96,11 +96,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 #keySel{width:74px}
 .chord-now{flex:1;min-width:0;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chord-now b{font-size:22px;color:var(--accent);font-weight:600;margin-right:6px}
-.kb .w.sc{background:#F3E1BF}
-.kb .b.sc{background:linear-gradient(var(--key-black) 72%,#9A6A2C 72%)}
-.kb .w.ct{background:#E9A54F}
-.kb .w.ct .n,.kb .w.ct .o{color:#3B2507}
-.kb .b.ct{background:linear-gradient(var(--key-black) 45%,#E9A54F 45%)}
+.kb .w.sc{background:#A9CBFF}
+.kb .w.sc .n,.kb .w.sc .o{color:#14315E}
+.kb .b.sc{background:linear-gradient(var(--key-black) 60%,#3D7BE6 60%)}
+.kb .w.ct{background:#B48AF5}
+.kb .w.ct .n,.kb .w.ct .o{color:#2A0F57}
+.kb .b.ct{background:linear-gradient(var(--key-black) 40%,#9B66F0 40%)}
 .kb-legend{display:flex;gap:12px;justify-content:center;font-size:11px;color:var(--muted);padding:0 16px 4px}
 .kb-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 #rhythmSel{height:32px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:13px;padding:0 10px;max-width:46%}
@@ -246,7 +247,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="range" id="kbRange"></div>
       <button class="oct" id="octUp" aria-label="1オクターブ上へ">高く ▶</button>
     </div>
-    <div class="kb-legend" id="kbLegend" hidden><span><i style="background:#F3E1BF"></i>キーの音（使える音）</span><span><i style="background:#E9A54F"></i>いまのコードの音（特に合う）</span></div>
+    <div class="kb-legend" id="kbLegend" hidden><span><i style="background:#A9CBFF"></i>キーの音（使える音）</span><span><i style="background:#B48AF5"></i>いまのコードの音（特に合う）</span></div>
     <div class="kb" id="kb" aria-label="鍵盤"><div class="kb-row" id="kbHi"></div><div class="kb-row" id="kbLo"></div></div>
     <div class="kb-pad"></div>
   </section>
@@ -459,9 +460,13 @@ function ensureAudio(){
     clickBus = ctx.createGain(); clickBus.connect(master);
     chordBus = ctx.createGain(); chordBus.connect(master);
     applyVolumes();
+    // 無音でも出力を止めさせない（止まると次の一音の出だしが遅れる）
+    const keep = ctx.createOscillator(), kg = ctx.createGain();
+    kg.gain.value = 0.00001; keep.connect(kg).connect(ctx.destination); keep.start();
+    applySilentMode();
   }
-  applySilentMode();
-  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  // 押すたびにマナーモード設定を掛け直すと発音が遅れるので、止まっているときだけ起こす
+  if (ctx.state !== 'running') { applySilentMode(); ctx.resume().catch(() => {}); }
 }
 function applyVolumes(){
   if (!ctx) return;
@@ -535,16 +540,16 @@ function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   const env = ac.createGain(); mix.connect(env); env.connect(dest);
   const peak = SING_GAIN * vel;
   env.gain.setValueAtTime(0.0001, when);
-  env.gain.linearRampToValueAtTime(peak, when + 0.05);
-  env.gain.setTargetAtTime(peak * 0.85, when + 0.05, 0.3);
+  env.gain.linearRampToValueAtTime(peak, when + 0.008);
+  env.gain.setTargetAtTime(peak * 0.25, when + 0.15, 0.7);   // 押し続けると約1.5秒でゆっくり弱まる
   [o1, o2, lfo].forEach(o => o.start(when));
   let stopped = false;
   return {
     stop(t){
       if (stopped) return; stopped = true;
       t = Math.max(t, ac.currentTime);
-      env.gain.setTargetAtTime(0, t, 0.07);
-      [o1, o2, lfo].forEach(o => { try { o.stop(t + 0.6); } catch (e) {} });
+      env.gain.setTargetAtTime(0, t, 0.035);
+      [o1, o2, lfo].forEach(o => { try { o.stop(t + 0.3); } catch (e) {} });
     }
   };
 }
