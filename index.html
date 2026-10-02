@@ -91,6 +91,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .btn{white-space:nowrap}
 #bpmRange{width:100%;accent-color:var(--accent);height:18px;margin:0}
 .beats{display:flex;gap:6px;flex:1;min-width:100px;align-items:center}
+.chord-row{flex-wrap:nowrap;gap:6px}
+#progSel,#keySel{height:32px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:13px;padding:0 8px}
+#keySel{width:74px}
+.chord-now{flex:1;min-width:0;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chord-now b{font-size:22px;color:var(--accent);font-weight:600;margin-right:6px}
+.kb .w.ct{background:linear-gradient(var(--key-white) 55%,var(--accent-soft))}
+.kb .b.ct{box-shadow:inset 0 -14px 0 var(--accent)}
 #rhythmSel{height:32px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:13px;padding:0 10px;max-width:46%}
 .beats span{flex:1;height:6px;border-radius:3px;background:var(--surface-2);transition:background .05s}
 .beats span.first{height:9px}
@@ -218,6 +225,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <div class="beats" id="beats"></div>
         <select id="rhythmSel" aria-label="リズムの種類"><option value="click">クリック</option><option value="8beat">8ビート</option><option value="16beat">16ビート</option><option value="4uchi">4つ打ち</option><option value="ballad">バラード</option><option value="shuffle">シャッフル</option></select>
       </div>
+      <div class="row chord-row">
+        <select id="progSel" aria-label="コード進行"><option value="none">コードなし</option><option value="oudou">王道進行</option><option value="canon">カノン進行</option><option value="loop">洋楽ループ</option></select>
+        <select id="keySel" aria-label="キー"></select>
+        <div class="chord-now" id="chordNow"></div>
+      </div>
       <div class="actions">
         <button class="btn btn-metro" id="metroBtn" aria-pressed="false">リズムを鳴らす</button>
         <button class="btn btn-rec" id="recBtn"><span class="dot"></span><span id="recLabel">録音</span></button>
@@ -265,9 +277,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <div class="sheet-body">
     <div class="set-row"><span class="lbl">鍵盤の音量</span><input type="range" id="pianoVol" min="0" max="100" value="80" aria-label="鍵盤の音量"></div>
     <div class="set-row"><span class="lbl">リズム（クリック・ドラム）の音量</span><input type="range" id="clickVol" min="0" max="100" value="60" aria-label="リズムの音量"></div>
+    <div class="set-row"><span class="lbl">コードの音量</span><input type="range" id="chordVol" min="0" max="100" value="55" aria-label="コードの音量"></div>
     <div class="set-row"><span class="lbl">鍵盤の表記</span>
       <div class="seg" id="labelSeg"><button data-v="doremi">ドレミ</button><button data-v="abc">CDE</button><button data-v="none">なし</button></div></div>
-    <div class="set-row"><span class="lbl">再生するときもリズムを鳴らす</span>
+    <div class="set-row"><span class="lbl">再生するときも伴奏（リズム・コード）を鳴らす</span>
       <div class="seg" id="clickPlaySeg"><button data-v="1">鳴らす</button><button data-v="0">鳴らさない</button></div></div>
     <div class="set-row"><span class="lbl">マナーモードでも音を出す</span>
       <div class="seg" id="silentSeg"><button data-v="1">出す</button><button data-v="0">出さない</button></div>
@@ -286,9 +299,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <div class="sheet-body">
     <div class="set-row"><span class="lbl" id="wavTitle"></span>
       <span class="sub">弾いたメロディーを音のファイル（.wav）にします。iPhoneの「ファイル」に保存したり、AirDrop・LINEで送ったり、SUNOに読み込ませたりできます。</span></div>
-    <div class="set-row"><span class="lbl">リズム（クリック・ドラム）</span>
+    <div class="set-row"><span class="lbl">伴奏（リズム・コード）</span>
       <div class="seg" id="wavClickSeg"><button data-v="0">入れない</button><button data-v="1">入れる</button></div>
-      <span class="sub">「入れる」にすると、録音したときのリズム（8ビートなど）が入ります。SUNOに渡すなら「入れない」がおすすめです。</span></div>
+      <span class="sub">「入れる」にすると、録音したときのリズム（8ビートなど）とコード進行が入ります。SUNOに渡すなら「入れない」がおすすめです。</span></div>
     <button class="new-song" id="wavMake">音のファイルを作る</button>
     <button class="new-song" id="wavShare" hidden>保存・送る</button>
     <span id="wavInfo" style="font-size:12px;color:var(--muted);text-align:center"></span>
@@ -320,7 +333,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /* ---------- settings ---------- */
 const settings = Object.assign({
-  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, playInSilent: true, currentId: null
+  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, prog: 'none', key: 0, chordVol: 55, playInSilent: true, currentId: null
 }, LS.get('pm.settings', {}));
 const saveSettings = () => LS.set('pm.settings', settings);
 
@@ -425,7 +438,7 @@ function sampleSong(){
 const cur = () => songs[settings.currentId];
 
 /* ---------- audio ---------- */
-let ctx = null, master = null, pianoBus = null, clickBus = null, silentEl = null;
+let ctx = null, master = null, pianoBus = null, clickBus = null, chordBus = null, silentEl = null;
 function ensureAudio(){
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -435,6 +448,7 @@ function ensureAudio(){
     master.connect(ctx.destination);
     pianoBus = ctx.createGain(); pianoBus.connect(master);
     clickBus = ctx.createGain(); clickBus.connect(master);
+    chordBus = ctx.createGain(); chordBus.connect(master);
     applyVolumes();
   }
   applySilentMode();
@@ -444,6 +458,7 @@ function applyVolumes(){
   if (!ctx) return;
   pianoBus.gain.value = (settings.pianoVol / 100) ** 1.5 * 1.1;
   clickBus.gain.value = (settings.clickVol / 100) ** 1.5 * 1.0;
+  chordBus.gain.value = (settings.chordVol / 100) ** 1.5 * 1.0;
 }
 function applySilentMode(){
   try { if (navigator.audioSession) navigator.audioSession.type = settings.playInSilent ? 'playback' : 'ambient'; } catch (e) {}
@@ -580,13 +595,39 @@ function beatSound(t, i, beats, rhythm, secPerBeat, dest, ac = ctx){
   });
 }
 
+/* ---------- chord progressions ---------- */
+// 度数（キーの主音からの半音数）と長短。キーを変えると全体が移調する
+const PROGS = {
+  oudou: { name: '王道進行', chords: [[5, 'M'], [7, 'M'], [4, 'm'], [9, 'm']] },
+  canon: { name: 'カノン進行', chords: [[0, 'M'], [7, 'M'], [9, 'm'], [4, 'm'], [5, 'M'], [0, 'M'], [5, 'M'], [7, 'M']] },
+  loop:  { name: '洋楽ループ', chords: [[9, 'm'], [5, 'M'], [0, 'M'], [7, 'M']] }
+};
+const SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const FLAT = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+const FLAT_KEYS = [1, 3, 5, 8, 10];
+const KEY_LABELS = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const chordRoot = (key, ch) => (key + ch[0]) % 12;
+const chordName = (key, ch) => (FLAT_KEYS.includes(key) ? FLAT : SHARP)[chordRoot(key, ch)] + (ch[1] === 'm' ? 'm' : '');
+const chordPcs = (key, ch) => { const r = chordRoot(key, ch); return [r, (r + (ch[1] === 'm' ? 3 : 4)) % 12, (r + 7) % 12]; };
+const into = (pc, lo) => lo + ((pc - lo) % 12 + 12) % 12;
+function playChord(ac, dest, t, dur, key, ch){
+  const pcs = chordPcs(key, ch);
+  pcs.forEach(pc => voice(into(pc, 55), t, 0.5, ac, dest).stop(t + dur - 0.04)); // 和音はG3〜F#4
+  voice(into(pcs[0], 40), t, 0.75, ac, dest).stop(t + dur - 0.04);              // ベースはE2〜D#3
+}
+// 小節番号 → その小節のコード（録音・再生・書き出しで共通）
+function chordAt(prog, progStart, bar){
+  const P = PROGS[prog]; if (!P || bar < 0) return null;
+  return P.chords[(progStart + bar) % P.chords.length];
+}
+
 /* ---------- metronome ---------- */
-const metro = { on: false, next: 0, idx: 0, timer: null, queue: [] };
+const metro = { on: false, next: 0, idx: 0, timer: null, queue: [], chordOffset: 0, chordQ: [] };
 const spb = () => 60 / settings.bpm;
-function metroStart(at){
+function metroStart(at, chordOffset){
   ensureAudio();
   metro.on = true; metro.idx = 0; metro.next = at != null ? at : ctx.currentTime + 0.08;
-  metro.queue = [];
+  metro.queue = []; metro.chordQ = []; metro.chordOffset = chordOffset || 0;
   clearInterval(metro.timer);
   metro.timer = setInterval(metroTick, 25);
   metroTick();
@@ -595,8 +636,8 @@ function metroStart(at){
   $('#metroBtn').textContent = 'リズムを止める';
 }
 function metroStop(){
-  metro.on = false; clearInterval(metro.timer); metro.queue = [];
-  paintBeats(-1);
+  metro.on = false; clearInterval(metro.timer); metro.queue = []; metro.chordQ = [];
+  paintBeats(-1); showChord(null);
   wakeLock(false);
   $('#metroBtn').setAttribute('aria-pressed', 'false');
   $('#metroBtn').textContent = 'リズムを鳴らす';
@@ -605,6 +646,11 @@ function metroTick(){
   while (metro.next < ctx.currentTime + 0.12) {
     const b = settings.beats, i = metro.idx % b;
     beatSound(metro.next, i, b, settings.rhythm, spb());
+    if (i === 0) {
+      const ch = chordAt(settings.prog, 0, metro.idx / b - metro.chordOffset);
+      if (ch) playChord(ctx, chordBus, metro.next, spb() * b, settings.key, ch);
+      metro.chordQ.push({ t: metro.next, ch, key: settings.key, prog: settings.prog, bar: metro.idx / b - metro.chordOffset });
+    }
     metro.queue.push({ t: metro.next, i });
     metro.idx++; metro.next += spb();
   }
@@ -613,6 +659,7 @@ function nextDownbeat(){
   // time of the next bar start after "now" (at least half a beat away)
   const b = settings.beats; let t = metro.next, i = metro.idx;
   while (i % b !== 0 || t < ctx.currentTime + spb() * 0.5) { t += spb(); i++; }
+  metro.nextBar = i / b - metro.chordOffset;
   return t;
 }
 
@@ -636,10 +683,12 @@ function recStart(){
   stopPlayback();
   if (!cur()) newSong('');
   const fresh = !metro.on, t0 = ctx.currentTime + 0.1;
-  if (fresh) metroStart(t0); // 1 bar count-in
+  if (fresh) metroStart(t0, 1); // 1 bar count-in (no chord during it)
   rec.active = true; rec.notes = []; rec.open.clear();
   rec.bpm = settings.bpm; rec.beats = settings.beats; rec.rhythm = settings.rhythm;
   rec.start = fresh ? t0 + spb() * settings.beats : nextDownbeat();
+  rec.prog = settings.prog; rec.key = settings.key;
+  const P = PROGS[rec.prog]; rec.progStart = P ? (fresh ? 0 : ((metro.nextBar % P.chords.length) + P.chords.length) % P.chords.length) : 0;
   rec.armedAt = ctx.currentTime;
   // notes held already while arming count from now
   active.forEach(a => { a.recNote = openRecNote(a.midi, ctx.currentTime); });
@@ -668,7 +717,7 @@ function recStop(){
   if (!notes.length) { toast('鍵盤が弾かれていないので、保存しませんでした'); setStatus(); return; }
   const end = Math.max(...notes.map(n => n[1] + n[2]));
   const len = Math.max(bar, Math.ceil(end / bar - 0.02) * bar);
-  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, notes, len, createdAt: Date.now() } };
+  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, prog: rec.prog, key: rec.key, progStart: rec.progStart, notes, len, createdAt: Date.now() } };
   $('#saveInfo').textContent = (len / bar) + '小節 · ' + rec.bpm + 'BPM · ' + (RHYTHMS[rec.rhythm] || 'クリック');
   $('#saveName').textContent = 'メモ' + nextMemoNo();
   openSheet('#saveSheet');
@@ -701,7 +750,7 @@ $('#saveKeep').addEventListener('click', () => {
 });
 $('#savePlay').addEventListener('click', () => { if (pending) playTake(pending.take); });
 function lockTempo(on){
-  ['#bpmDown', '#bpmUp', '#bpmRange', '#tapBtn', '#rhythmSel'].forEach(s => { $(s).disabled = on; });
+  ['#bpmDown', '#bpmUp', '#bpmRange', '#tapBtn', '#rhythmSel', '#progSel', '#keySel'].forEach(s => { $(s).disabled = on; });
   $('#meter').querySelectorAll('button').forEach(b => { b.disabled = on; });
 }
 
@@ -722,6 +771,8 @@ function playTake(take){
     const v = voice(p, t0 + s * b); v.stop(t0 + (s + d) * b); play.voices.push(v);
   });
   play.clickGain = ctx.createGain(); play.clickGain.connect(clickBus);
+  play.chordGain = ctx.createGain(); play.chordGain.connect(chordBus);
+  if (settings.clickOnPlay) for (let k = 0; k * bar < take.len; k++) { const ch = chordAt(take.prog, take.progStart || 0, k); if (ch) playChord(ctx, play.chordGain, t0 + k * bar * b, bar * b, take.key || 0, ch); }
   if (settings.clickOnPlay) {
     for (let k = off; k < take.len; k++) {
       const i = ((k % bar) + bar) % bar; beatSound(t0 + k * b, i, bar, take.rhythm || 'click', b, play.clickGain);
@@ -738,6 +789,7 @@ function stopPlayback(){
     const now = ctx.currentTime;
     play.voices.forEach(v => v.stop(now));
     if (play.clickGain) { try { play.clickGain.disconnect(); } catch (e) {} play.clickGain = null; }
+    if (play.chordGain) { try { play.chordGain.disconnect(); } catch (e) {} play.chordGain = null; }
   }
   play.voices = []; play.id = null; play.take = null;
   showPlaybackKeys(new Set());
@@ -785,6 +837,7 @@ function buildKeyboard(){
   const hiEnd = buildRow($('#kbHi'), hi, nWhite);
   $('#kbRange').textContent = '上 ' + noteName(hi) + '–' + noteName(hiEnd) + ' ／ 下 ' + noteName(lo) + '–' + noteName(loEnd);
   active.forEach(a => keyOn(a.midi, true));
+  shownChord = '';
 }
 function keyOn(m, on){ (keyEls.get(m) || []).forEach(el => el.classList.toggle('down', on)); }
 const active = new Map(); // pointerId -> {midi, v, recNote}
@@ -834,6 +887,24 @@ function showPlaybackKeys(set){
   playKeys = set;
 }
 
+/* ---------- chord display ---------- */
+let shownChord = '';
+function showChord(c){
+  const P = PROGS[settings.prog];
+  let html = '', pcs = [];
+  if (P && c && c.ch) {
+    const nxt = chordAt(c.prog, 0, c.bar + 1);
+    html = '<b>' + chordName(c.key, c.ch) + '</b>次 ' + (nxt ? chordName(c.key, nxt) : '');
+    pcs = chordPcs(c.key, c.ch);
+  } else if (P) {
+    html = P.chords.map(ch => chordName(settings.key, ch)).join(' – ');
+  }
+  const sig = html + pcs.join();
+  if (sig === shownChord) return; shownChord = sig;
+  $('#chordNow').innerHTML = html;
+  keyEls.forEach((els, m) => els.forEach(el => el.classList.toggle('ct', pcs.includes(m % 12))));
+}
+
 /* ---------- animation loop: beats, status, playhead ---------- */
 function frame(){
   if (ctx) {
@@ -842,6 +913,8 @@ function frame(){
       while (metro.queue.length > 1 && metro.queue[1].t <= now) metro.queue.shift();
       const q = metro.queue[0];
       paintBeats(q && q.t <= now && now - q.t < spb() * 0.6 ? q.i : -1);
+      while (metro.chordQ.length > 1 && metro.chordQ[1].t <= now) metro.chordQ.shift();
+      const c = metro.chordQ[0]; showChord(c && c.t <= now ? c : null);
     }
     if (rec.active) {
       const b = (now - rec.start) / (60 / rec.bpm);
@@ -871,6 +944,9 @@ function renderTempo(){
   $('#bpmRange').value = settings.bpm;
   $('#meterBtn').textContent = settings.beats === 6 ? '6/8' : settings.beats + '/4';
   $('#rhythmSel').value = RHYTHMS[settings.rhythm] ? settings.rhythm : 'click';
+  $('#progSel').value = PROGS[settings.prog] ? settings.prog : 'none';
+  $('#keySel').value = String(settings.key || 0);
+  shownChord = ''; if (!metro.on) showChord(null);
 }
 function fmtDate(ts){
   const d = new Date(ts);
@@ -921,14 +997,14 @@ function renderTakes(){
     name.setAttribute('aria-label', 'テイク名');
     name.addEventListener('change', () => { t.name = name.value.trim() || t.name; touchSong(s); });
     const meta = document.createElement('span'); meta.className = 'take-meta';
-    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '');
+    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '') + (PROGS[t.prog] ? ' · ' + PROGS[t.prog].name + '(' + KEY_LABELS[t.key || 0] + ')' : '');
     head.append(name, meta);
     const c = document.createElement('canvas');
     const btns = document.createElement('div'); btns.className = 'take-btns';
     const pb = document.createElement('button'); pb.className = 'mini play'; pb.textContent = play.id === t.id ? '■ 止める' : '▶ 再生';
     pb.addEventListener('click', () => playTake(t));
     const tempo = document.createElement('button'); tempo.className = 'mini'; tempo.textContent = 'このテンポに';
-    tempo.addEventListener('click', () => { if (rec.active) return; settings.bpm = t.bpm; settings.beats = t.beats; if (t.rhythm) settings.rhythm = t.rhythm; saveSettings(); renderTempo(); buildBeats(); setStatus(); toast(t.bpm + ' BPM・' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' にしました'); });
+    tempo.addEventListener('click', () => { if (rec.active) return; settings.bpm = t.bpm; settings.beats = t.beats; if (t.rhythm) settings.rhythm = t.rhythm; if (t.prog) { settings.prog = t.prog; settings.key = t.key || 0; } saveSettings(); renderTempo(); buildBeats(); setStatus(); toast(t.bpm + ' BPM・' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' にしました'); });
     const del = document.createElement('button'); del.className = 'mini danger'; del.textContent = '削除'; del.style.marginLeft = 'auto';
     let armT = null;
     del.addEventListener('click', () => {
@@ -970,7 +1046,7 @@ function renderSongList(){
 }
 function renderAll(){ renderTempo(); buildBeats(); renderSong(); renderSettings(); }
 function renderSettings(){
-  $('#pianoVol').value = settings.pianoVol; $('#clickVol').value = settings.clickVol;
+  $('#pianoVol').value = settings.pianoVol; $('#clickVol').value = settings.clickVol; $('#chordVol').value = settings.chordVol;
   const seg = (sel, val) => $(sel).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === String(val) ? 'true' : 'false'));
   seg('#labelSeg', settings.labels); seg('#clickPlaySeg', settings.clickOnPlay ? 1 : 0); seg('#silentSeg', settings.playInSilent ? 1 : 0);
 }
@@ -994,6 +1070,10 @@ function setBpm(v){
   if (metro.on) setStatus();
 }
 $('#rhythmSel').addEventListener('change', e => { settings.rhythm = e.target.value; saveSettings(); });
+$('#keySel').innerHTML = KEY_LABELS.map((k, i) => '<option value="' + i + '">キー ' + k + '</option>').join('');
+$('#progSel').addEventListener('change', e => { settings.prog = e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
+$('#keySel').addEventListener('change', e => { settings.key = +e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
+$('#chordVol').addEventListener('input', e => { settings.chordVol = +e.target.value; saveSettings(); applyVolumes(); });
 $('#bpmDown').addEventListener('click', () => setBpm(settings.bpm - 1));
 $('#bpmUp').addEventListener('click', () => setBpm(settings.bpm + 1));
 $('#bpmRange').addEventListener('input', e => setBpm(+e.target.value));
@@ -1143,8 +1223,10 @@ async function renderWav(take, withClick){
   const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(ac.destination);
   const pb = ac.createGain(); pb.gain.value = 1; pb.connect(comp);
   const cb = ac.createGain(); cb.gain.value = 0.5; cb.connect(comp);
+  const chb = ac.createGain(); chb.gain.value = 0.55; chb.connect(comp);
   const t0 = 0.05 - off * b;
   take.notes.forEach(([p, st, d]) => { const v = voice(p, t0 + st * b, 0.85, ac, pb); v.stop(t0 + (st + d) * b); });
+  if (withClick) for (let k = 0; k * bar < take.len; k++) { const ch = chordAt(take.prog, take.progStart || 0, k); if (ch) playChord(ac, chb, t0 + k * bar * b, bar * b, take.key || 0, ch); }
   if (withClick) for (let k = off; k < take.len; k++) beatSound(t0 + k * b, ((k % bar) + bar) % bar, bar, take.rhythm || 'click', b, cb, ac);
   const buf = await ac.startRendering();
   const data = buf.getChannelData(0);
