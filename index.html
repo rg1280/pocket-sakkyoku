@@ -449,6 +449,9 @@ function sampleSong(){
 const cur = () => songs[settings.currentId];
 
 /* ---------- audio ---------- */
+// いま作った発振器・音源の登録先（再生中なら play、リズム中なら metro）。止めるときに全部止める
+let oscSink = null;
+function track(o){ if (oscSink) oscSink.push(o); return o; }
 let ctx = null, master = null, pianoBus = null, clickBus = null, chordBus = null, silentEl = null;
 function ensureAudio(){
   if (!ctx) {
@@ -512,7 +515,7 @@ function pianoVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   g.gain.setValueAtTime(0.0001, when);
   g.gain.linearRampToValueAtTime(peak, when + 0.006);
   g.gain.setTargetAtTime(peak * 0.28, when + 0.006, 0.45);
-  [o1, o2].forEach(o => o.start(when));
+  [o1, o2].forEach(o => { o.start(when); track(o); });
   let stopped = false;
   return {
     stop(t){
@@ -520,7 +523,8 @@ function pianoVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
       t = Math.max(t, ac.currentTime);
       g.gain.setTargetAtTime(0, t, 0.07);
       [o1, o2].forEach(o => { try { o.stop(t + 0.6); } catch (e) {} });
-    }
+    },
+    kill(){ try { g.gain.cancelScheduledValues(0); g.gain.value = 0; } catch (e) {} [o1, o2].forEach(o => { try { o.stop(); } catch (e) {} }); }
   };
 }
 // 歌声風：のこぎり波を母音「ア」の響き（フォルマント）に通し、遅れてかかるビブラートで伸ばす
@@ -543,7 +547,7 @@ function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   env.gain.setValueAtTime(0.0001, when);
   env.gain.linearRampToValueAtTime(peak, when + 0.008);
   env.gain.setTargetAtTime(peak * 0.12, when + 0.08, 0.32);  // 押し続けても約0.7秒で弱まる（10/2 短く）
-  [o1, lfo].forEach(o => o.start(when));
+  [o1, lfo].forEach(o => { o.start(when); track(o); });
   let stopped = false;
   return {
     stop(t){
@@ -551,7 +555,8 @@ function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
       t = Math.max(t, ac.currentTime);
       env.gain.setTargetAtTime(0, t, 0.025);
       [o1, lfo].forEach(o => { try { o.stop(t + 0.3); } catch (e) {} });
-    }
+    },
+    kill(){ try { env.gain.cancelScheduledValues(0); env.gain.value = 0; } catch (e) {} [o1, lfo].forEach(o => { try { o.stop(); } catch (e) {} }); }
   };
 }
 const SING_GAIN = 1.1; // 軽くした後の音量を実測で前と同じにそろえた
@@ -566,7 +571,7 @@ function click(when, level, dest, ac = ctx){ // level 2=downbeat 1=secondary 0=n
   g.gain.setValueAtTime(0.0001, when);
   g.gain.exponentialRampToValueAtTime(peak, when + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
-  o.connect(g).connect(dest || clickBus); o.start(when); o.stop(when + 0.06);
+  o.connect(g).connect(dest || clickBus); o.start(when); o.stop(when + 0.06); track(o);
 }
 const beatLevel = (i, beats) => i === 0 ? 2 : (beats === 6 && i === 3) ? 1 : 0;
 
@@ -587,19 +592,19 @@ function kick(ac, dest, t, v = 1){
   o.type = 'sine'; o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.0 * v, t + 0.004);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
-  o.connect(g).connect(dest); o.start(t); o.stop(t + 0.4);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + 0.4); track(o);
 }
 function snare(ac, dest, t, v = 1){
   const n = noise(ac), hp = ac.createBiquadFilter(), g = ac.createGain();
   hp.type = 'highpass'; hp.frequency.value = 1400;
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.55 * v, t + 0.003);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + 0.22);
+  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + 0.22); track(n);
   const o = ac.createOscillator(), og = ac.createGain();
   o.type = 'triangle'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.45 * v, t + 0.003);
   og.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-  o.connect(og).connect(dest); o.start(t); o.stop(t + 0.14);
+  o.connect(og).connect(dest); o.start(t); o.stop(t + 0.14); track(o);
 }
 function hat(ac, dest, t, v = 1, open = false){
   const n = noise(ac), hp = ac.createBiquadFilter(), g = ac.createGain();
@@ -607,7 +612,7 @@ function hat(ac, dest, t, v = 1, open = false){
   const len = open ? 0.28 : 0.05;
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * v, t + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + len + 0.02);
+  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + len + 0.02); track(n);
 }
 const range = (n, step) => Array.from({ length: Math.round(n / step) }, (_, i) => +(i * step).toFixed(4));
 const PATTERNS_4 = {
@@ -697,7 +702,7 @@ function backingBar(ac, dest, t, bar, beats, secPerBeat, prog, key, progStart){
 }
 
 /* ---------- metronome ---------- */
-const metro = { on: false, next: 0, idx: 0, timer: null, queue: [], chordOffset: 0, chordQ: [] };
+const metro = { oscs: [], on: false, next: 0, idx: 0, timer: null, queue: [], chordOffset: 0, chordQ: [] };
 const spb = () => 60 / settings.bpm;
 function metroStart(at, chordOffset){
   ensureAudio();
@@ -714,7 +719,7 @@ function metroStart(at, chordOffset){
 }
 function metroStop(){
   metro.on = false; clearInterval(metro.timer); metro.queue = []; metro.chordQ = [];
-  [metro.clickGain, metro.chordGain].forEach(g => { if (g) try { g.disconnect(); } catch (e) {} });
+  [metro.clickGain, metro.chordGain].forEach(cutGain); metro.oscs.forEach(o => { try { o.stop(); } catch (e) {} }); metro.oscs = [];
   metro.clickGain = metro.chordGain = null;
   paintBeats(-1); showChord(null);
   wakeLock(false);
@@ -722,6 +727,9 @@ function metroStop(){
   $('#metroBtn').textContent = 'リズムを鳴らす';
 }
 function metroTick(){
+  const now = ctx.currentTime;
+  if (metro.oscs.length > 300) metro.oscs = metro.oscs.slice(-300); // 古いもの（鳴り終わり済み）は手放す
+  oscSink = metro.oscs;
   while (metro.next < ctx.currentTime + 0.12) {
     const b = settings.beats, i = metro.idx % b;
     beatSound(metro.next, i, b, settings.rhythm, spb(), metro.clickGain);
@@ -733,6 +741,7 @@ function metroTick(){
     metro.queue.push({ t: metro.next, i });
     metro.idx++; metro.next += spb();
   }
+  oscSink = null; // 鍵盤を弾いた音は登録しない
 }
 function nextDownbeat(){
   // time of the next bar start after "now" (at least half a beat away)
@@ -834,7 +843,7 @@ function lockTempo(on){
 }
 
 /* ---------- playback ---------- */
-const play = { id: null, voices: [], t0: 0, take: null, off: 0, timer: null };
+const play = { oscs: [], id: null, voices: [], t0: 0, take: null, off: 0, timer: null };
 function playTake(take){
   ensureAudio();
   if (play.id === take.id) { stopPlayback(); return; }
@@ -847,6 +856,7 @@ function playTake(take){
   const t0 = ctx.currentTime + 0.12 - off * b; // time of beat 0
   play.id = take.id; play.take = take; play.t0 = t0; play.off = off;
   play.melGain = ctx.createGain(); play.melGain.connect(pianoBus);
+  play.oscs = []; oscSink = play.oscs;
   take.notes.forEach(([p, s, d]) => {
     const v = voice(p, t0 + s * b, 0.85, ctx, play.melGain); v.stop(t0 + (s + d) * b); play.voices.push(v);
   });
@@ -858,6 +868,7 @@ function playTake(take){
       const i = ((k % bar) + bar) % bar; beatSound(t0 + k * b, i, bar, take.rhythm || 'click', b, play.clickGain);
     }
   }
+  oscSink = null; // ここから先に作る音（鍵盤など）は登録しない
   const dur = (take.len - off) * b + 0.3;
   play.timer = setTimeout(stopPlayback, dur * 1000 + 150);
   renderTakes();
@@ -867,10 +878,10 @@ function stopPlayback(){
   clearTimeout(play.timer);
   if (ctx) {
     const now = ctx.currentTime;
-    play.voices.forEach(v => v.stop(now));
-    if (play.clickGain) { try { play.clickGain.disconnect(); } catch (e) {} play.clickGain = null; }
-    if (play.chordGain) { try { play.chordGain.disconnect(); } catch (e) {} play.chordGain = null; }
-    if (play.melGain) { try { play.melGain.disconnect(); } catch (e) {} play.melGain = null; }
+    [play.clickGain, play.chordGain, play.melGain].forEach(cutGain);
+    play.clickGain = play.chordGain = play.melGain = null;
+    play.voices.forEach(v => v.kill ? v.kill() : v.stop(now));
+    play.oscs.forEach(o => { try { o.stop(); } catch (e) {} }); play.oscs = [];
   }
   play.voices = []; play.id = null; play.take = null;
   showPlaybackKeys(new Set());
@@ -1368,6 +1379,12 @@ $('#wavShare').addEventListener('click', async () => {
 });
 
 window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(() => { if (!$('#viewMelody').hidden) buildKeyboard(); if (!$('#viewTakes').hidden) renderTakes(); }, 150); });
+// iPhone(Safari)では通り道を外すだけでは予約済みの音が止まらなかった（10/2）。音量0＋外す＋発振器停止の三重で止める
+function cutGain(g){
+  if (!g) return;
+  try { const now = ctx.currentTime; g.gain.cancelScheduledValues(now); g.gain.setValueAtTime(0, now); g.gain.value = 0; } catch (e) {}
+  try { g.disconnect(); } catch (e) {}
+}
 function stopAllSound(){
   active.forEach((_, id) => release(id)); downPtrs.clear();
   if (rec.active) recStop();           // 録音中なら、戻ったときに「削除／保存」を選べる
