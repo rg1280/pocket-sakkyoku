@@ -247,7 +247,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
           <optgroup label="明るい定番"><option value="iiv">I-IV-V（スパークル型）</option><option value="oudou">王道進行</option><option value="canon">カノン進行</option><option value="loop">洋楽ループ</option><option value="junkan">循環コード</option><option value="fifties">50年代進行</option></optgroup>
           <optgroup label="切ない・暗め"><option value="komuro">小室進行</option><option value="hana">I-III-vi-v（花束型）</option><option value="creep">Creep進行</option><option value="cliche">ラインクリシェ</option></optgroup>
           <optgroup label="おしゃれ"><option value="marusa">丸サ進行</option><option value="twofive">ツーファイブ</option></optgroup>
-          <optgroup label="発声練習"><option value="five">5トーン（発声練習）</option></optgroup></select>
+          <optgroup label="発声練習"><option value="five">5トーン（発声練習）</option><option value="oct15">1.5オクターブ（発声練習）</option></optgroup></select>
         <select id="keySel" aria-label="キー"></select>
         <div class="chord-now" id="chordNow"></div>
       </div>
@@ -694,7 +694,8 @@ function beatSound(t, i, beats, rhythm, secPerBeat, dest, ac = ctx){
 /* ---------- chord progressions ---------- */
 // 度数（キーの主音からの半音数）と長短。キーを変えると全体が移調する
 const PROGS = {
-  five:  { name: '5トーン', five: true, chords: [] },
+  five:  { name: '5トーン', five: true, drill: 'five', chords: [] },
+  oct15: { name: '1.5オクターブ', five: true, drill: 'oct15', chords: [] },
   oudou: { name: '王道進行', chords: [[5, 'M'], [7, 'M'], [4, 'm'], [9, 'm']] },
   canon: { name: 'カノン進行', chords: [[0, 'M'], [7, 'M'], [9, 'm'], [4, 'm'], [5, 'M'], [0, 'M'], [5, 'M'], [7, 'M']] },
   loop:  { name: '洋楽ループ', chords: [[9, 'm'], [5, 'M'], [0, 'M'], [7, 'M']] },
@@ -736,19 +737,39 @@ function chordAt(prog, progStart, bar){
   const P = PROGS[prog]; if (!P || P.five || bar < 0) return null;
   return P.chords[(progStart + bar) % P.chords.length];
 }
-/* ---------- 5トーンスケール（発声練習） ----------
-   2小節で1回：1小節目＝合図の和音（2拍）＋ド・レ・ミ・ファ（8分）、2小節目＝ソ・ファ・ミ・レ（8分）＋ド（2拍）
-   1回ごとに半音上がり、7つ上がったら半音ずつ下がって戻る。出発はキーの主音（3オクターブ目・C3〜B3） */
-const FIVE_STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1];
-const cycleLen = P => P.five ? FIVE_STEPS.length * 2 : P.chords.length;
-function fiveStep(progStart, bar){ return Math.floor((progStart + bar) / 2) % FIVE_STEPS.length; }
-function fiveRoot(key, progStart, bar){ return 48 + key + FIVE_STEPS[fiveStep(progStart, bar)]; }
+/* ---------- 発声練習（5トーン／1.5オクターブ） ----------
+   どちらも2小節で1回。1回ごとに半音上がり、上がりきったら半音ずつ下がって戻る。
+   5トーン   ：1小節目＝合図の和音（2拍）＋ド・レ・ミ・ファ／2小節目＝ソ・ファ・ミ・レ＋ド（2拍）。出発はキーの主音（C3〜B3）
+   1.5オクターブ：ド・ミ・ソ・ド・ミ・ソ・ファ・レ・シ・ソ・ファ・レ＋ド（2拍）。1小節目の頭に合図の和音。
+               最高音が出発の1.5オクターブ上になるので、出発は低め（G2〜F#3）・上がるのは5つまで */
+const DRILLS = {
+  five:  { steps: [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1], base: 48, label: 'ドレミファソファミレド',
+           sing: [0, 2, 4, 5, 7] },
+  oct15: { steps: [0, 1, 2, 3, 4, 5, 4, 3, 2, 1], base: 43, label: 'ドミソドミソファレシソファレド',
+           sing: [0, 4, 7, 12, 16, 19, 17, 14, 11, 7, 5, 2] }
+};
+const drillOf = prog => DRILLS[(PROGS[prog] || {}).drill] || DRILLS.five;
+const cycleLen = P => P.five ? DRILLS[P.drill].steps.length * 2 : P.chords.length;
+function fiveStep(progStart, bar, prog = settings.prog){ const D = drillOf(prog); return Math.floor((progStart + bar) / 2) % D.steps.length; }
+function drillStart(key, prog){ const D = drillOf(prog); return D.base + ((key - D.base) % 12 + 12) % 12; } // base以上で一番低い主音
+function fiveRoot(key, progStart, bar, prog = settings.prog){ return drillStart(key, prog) + drillOf(prog).steps[fiveStep(progStart, bar, prog)]; }
 // 1小節ぶんの伴奏（コード進行なら和音、5トーンなら見本の旋律）。リズム・再生・音で保存で共通
 function backingBar(ac, dest, t, bar, beats, secPerBeat, prog, key, progStart){
   const P = PROGS[prog]; if (!P || bar < 0) return;
   if (!P.five) { const ch = chordAt(prog, progStart, bar); if (ch) playChord(ac, dest, t, beats * secPerBeat, key, ch); return; }
-  const root = fiveRoot(key, progStart, bar);
+  const root = fiveRoot(key, progStart, bar, prog);
   const note = (m, at, len, v = 0.8) => pianoVoice(m, t + at * secPerBeat, v, ac, dest).stop(t + (at + len) * secPerBeat - 0.02);
+  if (P.drill === 'oct15') {
+    const seq = DRILLS.oct15.sing;
+    if ((progStart + bar) % 2 === 0) {
+      [0, 4, 7].forEach(x => note(root + x, 0, 1, 0.4)); note(root - 12, 0, 1, 0.55);  // 合図の和音（1拍）
+      seq.slice(0, 8).forEach((x, i) => note(root + x, i * 0.5, 0.5));                  // ド・ミ・ソ・ド・ミ・ソ・ファ・レ
+    } else {
+      seq.slice(8).forEach((x, i) => note(root + x, i * 0.5, 0.5));                      // シ・ソ・ファ・レ
+      note(root, 2, 2);                                                                  // ド
+    }
+    return;
+  }
   if ((progStart + bar) % 2 === 0) {
     [0, 4, 7].forEach(x => note(root + x, 0, 2, 0.45)); note(root - 12, 0, 2, 0.6);   // 合図の和音
     [0, 2, 4, 5].forEach((x, i) => note(root + x, 2 + i * 0.5, 0.5));                // ド・レ・ミ・ファ
@@ -1044,11 +1065,13 @@ function showChord(c){
   if (P && P.five) {
     const name = m => noteName(m).replace('#', '♯');
     if (c && c.bar >= 0) {
-      const root = fiveRoot(c.key, 0, c.bar), st = fiveStep(0, c.bar), up = FIVE_STEPS[(st + 1) % FIVE_STEPS.length] > FIVE_STEPS[st];
+      const D = drillOf(c.prog), root = fiveRoot(c.key, 0, c.bar, c.prog), st = fiveStep(0, c.bar, c.prog);
+      const up = D.steps[(st + 1) % D.steps.length] > D.steps[st];
       html = '<b>' + name(root) + '</b>' + (up ? '↑ 上がる' : '↓ 下がる');
-      fiveKeys = [0, 2, 4, 5, 7].map(x => root + x);
+      fiveKeys = D.sing.map(x => root + x);
     } else {
-      html = 'ドレミファソファミレド<br>' + name(48 + settings.key) + 'から半音ずつ上下';
+      const D = drillOf(settings.prog);
+      html = D.label + '<br>' + name(drillStart(settings.key, settings.prog)) + 'から半音ずつ上下';
     }
   } else if (P && c && c.ch) {
     const nxt = chordAt(c.prog, 0, c.bar + 1);
@@ -1241,7 +1264,7 @@ function setBpm(v){
 $('#rhythmSel').addEventListener('change', e => { settings.rhythm = e.target.value; saveSettings(); });
 $('#keySel').innerHTML = KEY_LABELS.map((k, i) => '<option value="' + i + '">キー ' + k + '</option>').join('');
 $('#progSel').addEventListener('change', e => { settings.prog = e.target.value;
-  if (settings.prog === 'five' && settings.beats !== 4) { settings.beats = 4; renderTempo(); buildBeats(); if (metro.on) { metroStop(); metroStart(); } toast('5トーンは4/4で練習します'); }
+  if (PROGS[settings.prog] && PROGS[settings.prog].five && settings.beats !== 4) { settings.beats = 4; renderTempo(); buildBeats(); if (metro.on) { metroStop(); metroStart(); } toast('発声練習は4/4で練習します'); }
   saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#keySel').addEventListener('change', e => { settings.key = +e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#chordVol').addEventListener('input', e => { settings.chordVol = +e.target.value; saveSettings(); applyVolumes(); });
