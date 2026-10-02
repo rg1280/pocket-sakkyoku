@@ -96,8 +96,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 #keySel{width:74px}
 .chord-now{flex:1;min-width:0;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chord-now b{font-size:22px;color:var(--accent);font-weight:600;margin-right:6px}
-.kb .w.ct{background:linear-gradient(var(--key-white) 50%,rgba(227,162,74,.6))}
-.kb .b.ct{box-shadow:inset 0 -14px 0 var(--accent)}
+.kb .w.sc{background:#F3E1BF}
+.kb .b.sc{background:linear-gradient(var(--key-black) 72%,#9A6A2C 72%)}
+.kb .w.ct{background:#E9A54F}
+.kb .w.ct .n,.kb .w.ct .o{color:#3B2507}
+.kb .b.ct{background:linear-gradient(var(--key-black) 45%,#E9A54F 45%)}
+.kb-legend{display:flex;gap:12px;justify-content:center;font-size:11px;color:var(--muted);padding:0 16px 4px}
+.kb-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 #rhythmSel{height:32px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:13px;padding:0 10px;max-width:46%}
 .beats span{flex:1;height:6px;border-radius:3px;background:var(--surface-2);transition:background .05s}
 .beats span.first{height:9px}
@@ -241,6 +246,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="range" id="kbRange"></div>
       <button class="oct" id="octUp" aria-label="1オクターブ上へ">高く ▶</button>
     </div>
+    <div class="kb-legend" id="kbLegend" hidden><span><i style="background:#F3E1BF"></i>キーの音（使える音）</span><span><i style="background:#E9A54F"></i>いまのコードの音（特に合う）</span></div>
     <div class="kb" id="kb" aria-label="鍵盤"><div class="kb-row" id="kbHi"></div><div class="kb-row" id="kbLo"></div></div>
     <div class="kb-pad"></div>
   </section>
@@ -278,6 +284,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     <div class="set-row"><span class="lbl">鍵盤の音量</span><input type="range" id="pianoVol" min="0" max="100" value="80" aria-label="鍵盤の音量"></div>
     <div class="set-row"><span class="lbl">リズム（クリック・ドラム）の音量</span><input type="range" id="clickVol" min="0" max="100" value="60" aria-label="リズムの音量"></div>
     <div class="set-row"><span class="lbl">コードの音量</span><input type="range" id="chordVol" min="0" max="100" value="55" aria-label="コードの音量"></div>
+    <div class="set-row"><span class="lbl">鍵盤の音色</span>
+      <div class="seg" id="timbreSeg"><button data-v="sing">歌声風（伸びる）</button><button data-v="piano">ピアノ</button></div>
+      <span class="sub">コードの伴奏は、メロディーと聞き分けやすいようにピアノのままです。</span></div>
     <div class="set-row"><span class="lbl">鍵盤の表記</span>
       <div class="seg" id="labelSeg"><button data-v="doremi">ドレミ</button><button data-v="abc">CDE</button><button data-v="none">なし</button></div></div>
     <div class="set-row"><span class="lbl">再生するときも伴奏（リズム・コード）を鳴らす</span>
@@ -333,7 +342,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /* ---------- settings ---------- */
 const settings = Object.assign({
-  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, prog: 'none', key: 0, chordVol: 55, playInSilent: true, currentId: null
+  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, prog: 'none', key: 0, chordVol: 55, playInSilent: true, timbre: 'sing', currentId: null
 }, LS.get('pm.settings', {}));
 const saveSettings = () => LS.set('pm.settings', settings);
 
@@ -480,7 +489,7 @@ function silentWav(){
   return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
 }
 const freq = m => 440 * Math.pow(2, (m - 69) / 12);
-function voice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
+function pianoVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   const f = freq(m);
   const g = ac.createGain();
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass';
@@ -505,6 +514,44 @@ function voice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
       [o1, o2, o3].forEach(o => { try { o.stop(t + 0.6); } catch (e) {} });
     }
   };
+}
+// 歌声風：のこぎり波2本を母音「ア」の響き（フォルマント）に通し、遅れてかかるビブラートで伸ばす
+function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
+  const f = freq(m);
+  const o1 = ac.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = f;
+  const o2 = ac.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = f; o2.detune.value = 6;
+  const lfo = ac.createOscillator(); lfo.frequency.value = 5.4;
+  const vib = ac.createGain(); vib.gain.setValueAtTime(0, when); vib.gain.setValueAtTime(0, when + 0.25); vib.gain.linearRampToValueAtTime(f * 0.008, when + 0.7);
+  lfo.connect(vib); vib.connect(o1.frequency); vib.connect(o2.frequency);
+  const src = ac.createGain(); src.gain.value = 0.5; o1.connect(src); o2.connect(src);
+  const pre = ac.createBiquadFilter(); pre.type = 'lowpass'; pre.frequency.value = 3800; src.connect(pre);
+  const mix = ac.createGain();
+  [[750, 5, 1], [1150, 7, 0.6], [2700, 9, 0.22]].forEach(([fr, q, gn]) => {
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = q;
+    const g = ac.createGain(); g.gain.value = gn; pre.connect(bp).connect(g).connect(mix);
+  });
+  const body = ac.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = Math.min(f * 2.5, 1200);
+  const bg = ac.createGain(); bg.gain.value = 0.35; pre.connect(body).connect(bg).connect(mix);
+  const env = ac.createGain(); mix.connect(env); env.connect(dest);
+  const peak = SING_GAIN * vel;
+  env.gain.setValueAtTime(0.0001, when);
+  env.gain.linearRampToValueAtTime(peak, when + 0.05);
+  env.gain.setTargetAtTime(peak * 0.85, when + 0.05, 0.3);
+  [o1, o2, lfo].forEach(o => o.start(when));
+  let stopped = false;
+  return {
+    stop(t){
+      if (stopped) return; stopped = true;
+      t = Math.max(t, ac.currentTime);
+      env.gain.setTargetAtTime(0, t, 0.07);
+      [o1, o2, lfo].forEach(o => { try { o.stop(t + 0.6); } catch (e) {} });
+    }
+  };
+}
+const SING_GAIN = 1.25; // ピアノと同じくらいの大きさになるよう実測で合わせた
+// メロディー（鍵盤・テイク再生・音で保存）の音色。コードは常にピアノ
+function voice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
+  return (settings.timbre === 'piano' ? pianoVoice : singVoice)(m, when, vel, ac, dest);
 }
 function click(when, level, dest, ac = ctx){ // level 2=downbeat 1=secondary 0=normal
   const o = ac.createOscillator(), g = ac.createGain();
@@ -612,8 +659,8 @@ const chordPcs = (key, ch) => { const r = chordRoot(key, ch); return [r, (r + (c
 const into = (pc, lo) => lo + ((pc - lo) % 12 + 12) % 12;
 function playChord(ac, dest, t, dur, key, ch){
   const pcs = chordPcs(key, ch);
-  pcs.forEach(pc => voice(into(pc, 55), t, 0.5, ac, dest).stop(t + dur - 0.04)); // 和音はG3〜F#4
-  voice(into(pcs[0], 40), t, 0.75, ac, dest).stop(t + dur - 0.04);              // ベースはE2〜D#3
+  pcs.forEach(pc => pianoVoice(into(pc, 55), t, 0.5, ac, dest).stop(t + dur - 0.04)); // 和音はG3〜F#4
+  pianoVoice(into(pcs[0], 40), t, 0.75, ac, dest).stop(t + dur - 0.04);              // ベースはE2〜D#3
 }
 // 小節番号 → その小節のコード（録音・再生・書き出しで共通）
 function chordAt(prog, progStart, bar){
@@ -899,10 +946,17 @@ function showChord(c){
   } else if (P) {
     html = P.chords.map(ch => chordName(settings.key, ch)).join(' – ');
   }
-  const sig = html + pcs.join();
+  // キー（メジャースケール）の7音＝使える音。コードが鳴っている間はその3音を強く塗る
+  const key = c && c.ch ? c.key : settings.key;
+  const scale = P ? [0, 2, 4, 5, 7, 9, 11].map(x => (key + x) % 12) : [];
+  const sig = html + pcs.join() + '|' + scale.join();
   if (sig === shownChord) return; shownChord = sig;
   $('#chordNow').innerHTML = html;
-  keyEls.forEach((els, m) => els.forEach(el => el.classList.toggle('ct', pcs.includes(m % 12))));
+  $('#kbLegend').hidden = !P;
+  keyEls.forEach((els, m) => els.forEach(el => {
+    el.classList.toggle('ct', pcs.includes(m % 12));
+    el.classList.toggle('sc', !pcs.includes(m % 12) && scale.includes(m % 12));
+  }));
 }
 
 /* ---------- animation loop: beats, status, playhead ---------- */
@@ -1048,7 +1102,7 @@ function renderAll(){ renderTempo(); buildBeats(); renderSong(); renderSettings(
 function renderSettings(){
   $('#pianoVol').value = settings.pianoVol; $('#clickVol').value = settings.clickVol; $('#chordVol').value = settings.chordVol;
   const seg = (sel, val) => $(sel).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === String(val) ? 'true' : 'false'));
-  seg('#labelSeg', settings.labels); seg('#clickPlaySeg', settings.clickOnPlay ? 1 : 0); seg('#silentSeg', settings.playInSilent ? 1 : 0);
+  seg('#timbreSeg', settings.timbre === 'piano' ? 'piano' : 'sing'); seg('#labelSeg', settings.labels); seg('#clickPlaySeg', settings.clickOnPlay ? 1 : 0); seg('#silentSeg', settings.playInSilent ? 1 : 0);
 }
 
 /* ---------- toast / sheets / wake lock ---------- */
@@ -1138,6 +1192,7 @@ $('#newSong').addEventListener('click', () => {
 });
 $('#pianoVol').addEventListener('input', e => { settings.pianoVol = +e.target.value; saveSettings(); applyVolumes(); });
 $('#clickVol').addEventListener('input', e => { settings.clickVol = +e.target.value; saveSettings(); applyVolumes(); });
+$('#timbreSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; settings.timbre = b.dataset.v; saveSettings(); renderSettings(); ensureAudio(); const v = voice(64, ctx.currentTime + 0.02); v.stop(ctx.currentTime + 0.7); });
 $('#labelSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; settings.labels = b.dataset.v; saveSettings(); renderSettings(); buildKeyboard(); });
 $('#clickPlaySeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; settings.clickOnPlay = b.dataset.v === '1'; saveSettings(); renderSettings(); });
 $('#silentSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; settings.playInSilent = b.dataset.v === '1'; saveSettings(); renderSettings(); if (ctx) applySilentMode(); });
