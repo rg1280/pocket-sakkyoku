@@ -1,5 +1,5 @@
 // オフライン（地下鉄など）でも開けるように、画面のファイルを端末に控えておく
-const CACHE = 'pocket-v22';
+const CACHE = 'pocket-v23';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
