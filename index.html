@@ -927,7 +927,7 @@ function lockTempo(on){
 }
 
 /* ---------- playback ---------- */
-const play = { oscs: [], id: null, voices: [], t0: 0, take: null, off: 0, timer: null };
+const play = { oscs: [], ev: [], evIdx: 0, sched: null, id: null, voices: [], t0: 0, take: null, off: 0, timer: null };
 function playTake(take){
   ensureAudio();
   if (play.id === take.id) { stopPlayback(); return; }
@@ -940,26 +940,39 @@ function playTake(take){
   const t0 = ctx.currentTime + 0.12 - off * b; // time of beat 0
   play.id = take.id; play.take = take; play.t0 = t0; play.off = off;
   play.melGain = ctx.createGain(); play.melGain.connect(pianoBus);
-  play.oscs = []; oscSink = play.oscs;
-  take.notes.forEach(([p, s, d]) => {
-    const v = voice(p, t0 + s * b, 0.85, ctx, play.melGain); v.stop(t0 + (s + d) * b); play.voices.push(v);
-  });
   play.clickGain = ctx.createGain(); play.clickGain.connect(clickBus);
   play.chordGain = ctx.createGain(); play.chordGain.connect(chordBus);
-  if (settings.clickOnPlay) for (let k = 0; k * bar < take.len; k++) backingBar(ctx, play.chordGain, t0 + k * bar * b, k, bar, b, take.prog, take.key || 0, take.progStart || 0);
+  play.oscs = [];
+  // 鳴らす予定を時刻順の一覧にしておき、0.3秒先までの分だけを順に組み立てる
+  const ev = [];
+  take.notes.forEach(([p, s, d]) => ev.push({ t: t0 + s * b, f: () => {
+    const v = voice(p, t0 + s * b, 0.85, ctx, play.melGain); v.stop(t0 + (s + d) * b); play.voices.push(v);
+  } }));
   if (settings.clickOnPlay) {
+    for (let k = 0; k * bar < take.len; k++) ev.push({ t: t0 + k * bar * b, f: () => backingBar(ctx, play.chordGain, t0 + k * bar * b, k, bar, b, take.prog, take.key || 0, take.progStart || 0) });
     for (let k = off; k < take.len; k++) {
-      const i = ((k % bar) + bar) % bar; beatSound(t0 + k * b, i, bar, take.rhythm || 'click', b, play.clickGain);
+      const i = ((k % bar) + bar) % bar; ev.push({ t: t0 + k * b, f: () => beatSound(t0 + k * b, i, bar, take.rhythm || 'click', b, play.clickGain) });
     }
   }
-  oscSink = null; // ここから先に作る音（鍵盤など）は登録しない
+  ev.sort((x, y) => x.t - y.t);
+  play.ev = ev; play.evIdx = 0;
+  clearInterval(play.sched); play.sched = setInterval(playTick, 25); playTick();
   const dur = (take.len - off) * b + 0.3;
   play.timer = setTimeout(stopPlayback, dur * 1000 + 150);
   renderTakes();
 }
+function playTick(){
+  if (!play.id || !ctx) return;
+  const limit = ctx.currentTime + 0.3;
+  oscSink = play.oscs;
+  while (play.evIdx < play.ev.length && play.ev[play.evIdx].t < limit) play.ev[play.evIdx++].f();
+  oscSink = null; // 鍵盤など、再生以外の音は登録しない
+  if (play.oscs.length > 400) play.oscs = play.oscs.slice(-400); // 鳴り終わった古いものは手放す
+  if (play.voices.length > 64) play.voices = play.voices.slice(-64);
+}
 function stopPlayback(){
   if (!play.id) return;
-  clearTimeout(play.timer);
+  clearTimeout(play.timer); clearInterval(play.sched); play.ev = []; play.evIdx = 0;
   if (ctx) {
     const now = ctx.currentTime;
     [play.clickGain, play.chordGain, play.melGain].forEach(cutGain);
