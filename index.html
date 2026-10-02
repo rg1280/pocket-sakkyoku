@@ -233,7 +233,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <select id="rhythmSel" aria-label="リズムの種類"><option value="click">クリック</option><option value="8beat">8ビート</option><option value="16beat">16ビート</option><option value="4uchi">4つ打ち</option><option value="ballad">バラード</option><option value="shuffle">シャッフル</option></select>
       </div>
       <div class="row chord-row">
-        <select id="progSel" aria-label="コード進行"><option value="none">コードなし</option><option value="oudou">王道進行</option><option value="canon">カノン進行</option><option value="loop">洋楽ループ</option></select>
+        <select id="progSel" aria-label="コード進行"><option value="none">コードなし</option><option value="oudou">王道進行</option><option value="canon">カノン進行</option><option value="loop">洋楽ループ</option><option value="five">5トーン（発声練習）</option></select>
         <select id="keySel" aria-label="キー"></select>
         <div class="chord-now" id="chordNow"></div>
       </div>
@@ -651,6 +651,7 @@ function beatSound(t, i, beats, rhythm, secPerBeat, dest, ac = ctx){
 /* ---------- chord progressions ---------- */
 // 度数（キーの主音からの半音数）と長短。キーを変えると全体が移調する
 const PROGS = {
+  five:  { name: '5トーン', five: true, chords: [] },
   oudou: { name: '王道進行', chords: [[5, 'M'], [7, 'M'], [4, 'm'], [9, 'm']] },
   canon: { name: 'カノン進行', chords: [[0, 'M'], [7, 'M'], [9, 'm'], [4, 'm'], [5, 'M'], [0, 'M'], [5, 'M'], [7, 'M']] },
   loop:  { name: '洋楽ループ', chords: [[9, 'm'], [5, 'M'], [0, 'M'], [7, 'M']] }
@@ -670,8 +671,29 @@ function playChord(ac, dest, t, dur, key, ch){
 }
 // 小節番号 → その小節のコード（録音・再生・書き出しで共通）
 function chordAt(prog, progStart, bar){
-  const P = PROGS[prog]; if (!P || bar < 0) return null;
+  const P = PROGS[prog]; if (!P || P.five || bar < 0) return null;
   return P.chords[(progStart + bar) % P.chords.length];
+}
+/* ---------- 5トーンスケール（発声練習） ----------
+   2小節で1回：1小節目＝合図の和音（2拍）＋ド・レ・ミ・ファ（8分）、2小節目＝ソ・ファ・ミ・レ（8分）＋ド（2拍）
+   1回ごとに半音上がり、7つ上がったら半音ずつ下がって戻る。出発はキーの主音（3オクターブ目・C3〜B3） */
+const FIVE_STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1];
+const cycleLen = P => P.five ? FIVE_STEPS.length * 2 : P.chords.length;
+function fiveStep(progStart, bar){ return Math.floor((progStart + bar) / 2) % FIVE_STEPS.length; }
+function fiveRoot(key, progStart, bar){ return 48 + key + FIVE_STEPS[fiveStep(progStart, bar)]; }
+// 1小節ぶんの伴奏（コード進行なら和音、5トーンなら見本の旋律）。リズム・再生・音で保存で共通
+function backingBar(ac, dest, t, bar, beats, secPerBeat, prog, key, progStart){
+  const P = PROGS[prog]; if (!P || bar < 0) return;
+  if (!P.five) { const ch = chordAt(prog, progStart, bar); if (ch) playChord(ac, dest, t, beats * secPerBeat, key, ch); return; }
+  const root = fiveRoot(key, progStart, bar);
+  const note = (m, at, len, v = 0.8) => pianoVoice(m, t + at * secPerBeat, v, ac, dest).stop(t + (at + len) * secPerBeat - 0.02);
+  if ((progStart + bar) % 2 === 0) {
+    [0, 4, 7].forEach(x => note(root + x, 0, 2, 0.45)); note(root - 12, 0, 2, 0.6);   // 合図の和音
+    [0, 2, 4, 5].forEach((x, i) => note(root + x, 2 + i * 0.5, 0.5));                // ド・レ・ミ・ファ
+  } else {
+    [7, 5, 4, 2].forEach((x, i) => note(root + x, i * 0.5, 0.5));                    // ソ・ファ・ミ・レ
+    note(root, 2, 2);                                                                  // ド
+  }
 }
 
 /* ---------- metronome ---------- */
@@ -705,7 +727,7 @@ function metroTick(){
     beatSound(metro.next, i, b, settings.rhythm, spb(), metro.clickGain);
     if (i === 0) {
       const ch = chordAt(settings.prog, 0, metro.idx / b - metro.chordOffset);
-      if (ch) playChord(ctx, metro.chordGain, metro.next, spb() * b, settings.key, ch);
+      backingBar(ctx, metro.chordGain, metro.next, metro.idx / b - metro.chordOffset, b, spb(), settings.prog, settings.key, 0);
       metro.chordQ.push({ t: metro.next, ch, key: settings.key, prog: settings.prog, bar: metro.idx / b - metro.chordOffset });
     }
     metro.queue.push({ t: metro.next, i });
@@ -745,7 +767,7 @@ function recStart(){
   rec.bpm = settings.bpm; rec.beats = settings.beats; rec.rhythm = settings.rhythm;
   rec.start = fresh ? t0 + spb() * settings.beats : nextDownbeat();
   rec.prog = settings.prog; rec.key = settings.key;
-  const P = PROGS[rec.prog]; rec.progStart = P ? (fresh ? 0 : ((metro.nextBar % P.chords.length) + P.chords.length) % P.chords.length) : 0;
+  const P = PROGS[rec.prog]; rec.progStart = P ? (fresh ? 0 : ((metro.nextBar % cycleLen(P)) + cycleLen(P)) % cycleLen(P)) : 0;
   rec.armedAt = ctx.currentTime;
   // notes held already while arming count from now
   active.forEach(a => { a.recNote = openRecNote(a.midi, ctx.currentTime); });
@@ -829,7 +851,7 @@ function playTake(take){
   });
   play.clickGain = ctx.createGain(); play.clickGain.connect(clickBus);
   play.chordGain = ctx.createGain(); play.chordGain.connect(chordBus);
-  if (settings.clickOnPlay) for (let k = 0; k * bar < take.len; k++) { const ch = chordAt(take.prog, take.progStart || 0, k); if (ch) playChord(ctx, play.chordGain, t0 + k * bar * b, bar * b, take.key || 0, ch); }
+  if (settings.clickOnPlay) for (let k = 0; k * bar < take.len; k++) backingBar(ctx, play.chordGain, t0 + k * bar * b, k, bar, b, take.prog, take.key || 0, take.progStart || 0);
   if (settings.clickOnPlay) {
     for (let k = off; k < take.len; k++) {
       const i = ((k % bar) + bar) % bar; beatSound(t0 + k * b, i, bar, take.rhythm || 'click', b, play.clickGain);
@@ -948,8 +970,17 @@ function showPlaybackKeys(set){
 let shownChord = '';
 function showChord(c){
   const P = PROGS[settings.prog];
-  let html = '', pcs = [];
-  if (P && c && c.ch) {
+  let html = '', pcs = [], fiveKeys = null;
+  if (P && P.five) {
+    const name = m => noteName(m).replace('#', '♯');
+    if (c && c.bar >= 0) {
+      const root = fiveRoot(c.key, 0, c.bar), st = fiveStep(0, c.bar), up = FIVE_STEPS[(st + 1) % FIVE_STEPS.length] > FIVE_STEPS[st];
+      html = '<b>' + name(root) + '</b>' + (up ? '↑ 上がる' : '↓ 下がる');
+      fiveKeys = [0, 2, 4, 5, 7].map(x => root + x);
+    } else {
+      html = 'ドレミファソファミレド<br>' + name(48 + settings.key) + 'から半音ずつ上下';
+    }
+  } else if (P && c && c.ch) {
     const nxt = chordAt(c.prog, 0, c.bar + 1);
     html = '<b>' + chordName(c.key, c.ch) + '</b>次 ' + (nxt ? chordName(c.key, nxt) : '');
     pcs = chordPcs(c.key, c.ch);
@@ -959,14 +990,14 @@ function showChord(c){
   }
   // キー（メジャースケール）の7音＝使える音。コードが鳴っている間はその3音を強く塗る
   const key = c && c.ch ? c.key : settings.key;
-  const scale = P ? [0, 2, 4, 5, 7, 9, 11].map(x => (key + x) % 12) : [];
-  const sig = html + pcs.join() + '|' + scale.join();
+  const scale = P && !P.five ? [0, 2, 4, 5, 7, 9, 11].map(x => (key + x) % 12) : [];
+  const sig = html + pcs.join() + '|' + scale.join() + '|' + (fiveKeys || []).join();
   if (sig === shownChord) return; shownChord = sig;
   $('#chordNow').innerHTML = html;
-  $('#chordNow').classList.toggle('list', !!P && !(c && c.ch));
-  $('#kbLegend').hidden = !P;
+  $('#chordNow').classList.toggle('list', !!P && !(c && (c.ch || (P.five && c.bar >= 0))));
+  $('#kbLegend').hidden = !P || !!P.five;
   keyEls.forEach((els, m) => els.forEach(el => {
-    el.classList.toggle('ct', pcs.includes(m % 12));
+    el.classList.toggle('ct', fiveKeys ? fiveKeys.includes(m) : pcs.includes(m % 12)); // 5トーンは歌う5つの鍵盤そのもの
     el.classList.toggle('sc', !pcs.includes(m % 12) && scale.includes(m % 12));
   }));
 }
@@ -1137,7 +1168,9 @@ function setBpm(v){
 }
 $('#rhythmSel').addEventListener('change', e => { settings.rhythm = e.target.value; saveSettings(); });
 $('#keySel').innerHTML = KEY_LABELS.map((k, i) => '<option value="' + i + '">キー ' + k + '</option>').join('');
-$('#progSel').addEventListener('change', e => { settings.prog = e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
+$('#progSel').addEventListener('change', e => { settings.prog = e.target.value;
+  if (settings.prog === 'five' && settings.beats !== 4) { settings.beats = 4; renderTempo(); buildBeats(); if (metro.on) { metroStop(); metroStart(); } toast('5トーンは4/4で練習します'); }
+  saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#keySel').addEventListener('change', e => { settings.key = +e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#chordVol').addEventListener('input', e => { settings.chordVol = +e.target.value; saveSettings(); applyVolumes(); });
 $('#bpmDown').addEventListener('click', () => setBpm(settings.bpm - 1));
@@ -1293,7 +1326,7 @@ async function renderWav(take, withClick){
   const chb = ac.createGain(); chb.gain.value = 0.55; chb.connect(comp);
   const t0 = 0.05 - off * b;
   take.notes.forEach(([p, st, d]) => { const v = voice(p, t0 + st * b, 0.85, ac, pb); v.stop(t0 + (st + d) * b); });
-  if (withClick) for (let k = 0; k * bar < take.len; k++) { const ch = chordAt(take.prog, take.progStart || 0, k); if (ch) playChord(ac, chb, t0 + k * bar * b, bar * b, take.key || 0, ch); }
+  if (withClick) for (let k = 0; k * bar < take.len; k++) backingBar(ac, chb, t0 + k * bar * b, k, bar, b, take.prog, take.key || 0, take.progStart || 0);
   if (withClick) for (let k = off; k < take.len; k++) beatSound(t0 + k * b, ((k % bar) + bar) % bar, bar, take.rhythm || 'click', b, cb, ac);
   const buf = await ac.startRendering();
   const data = buf.getChannelData(0);
