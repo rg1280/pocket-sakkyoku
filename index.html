@@ -528,6 +528,10 @@ function silentWav(){
   return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
 }
 const freq = m => 440 * Math.pow(2, (m - 69) / 12);
+// ⚠iPhoneは鳴り終わった部品も、つながっている限り計算し続ける → 長時間で雑音（10/3）。音を作ったら必ず cleanup を付ける
+function cleanup(src, nodes){
+  src.addEventListener('ended', () => nodes.forEach(n => { try { n.disconnect(); } catch (e) {} }));
+}
 function pianoVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   const f = freq(m);
   const g = ac.createGain();
@@ -543,6 +547,7 @@ function pianoVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   g.gain.linearRampToValueAtTime(peak, when + 0.006);
   g.gain.setTargetAtTime(peak * 0.28, when + 0.006, 0.45);
   [o1, o2].forEach(o => { o.start(when); track(o); });
+  cleanup(o1, [o1, o2, g2, lp, g]);
   let stopped = false;
   return {
     stop(t){
@@ -574,10 +579,10 @@ function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   const vib = ac.createGain(); vib.gain.setValueAtTime(0, when); vib.gain.setValueAtTime(0, when + 0.25); vib.gain.linearRampToValueAtTime(f * 0.005, when + 0.7);
   lfo.connect(vib); vib.connect(o1.frequency);
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2800; lp.Q.value = 0.5; o1.connect(lp);
-  const mix = ac.createGain();
+  const mix = ac.createGain(), parts = [];
   [[750, 2.5, 0.9], [1150, 3.5, 0.5]].forEach(([fr, q, gn]) => {
     const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = q;
-    const g = ac.createGain(); g.gain.value = gn; lp.connect(bp).connect(g).connect(mix);
+    const g = ac.createGain(); g.gain.value = gn; lp.connect(bp).connect(g).connect(mix); parts.push(bp, g);
   });
   const dry = ac.createGain(); dry.gain.value = 0.35; lp.connect(dry).connect(mix);
   const env = ac.createGain(); mix.connect(env); env.connect(dest);
@@ -586,6 +591,7 @@ function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   env.gain.linearRampToValueAtTime(peak, when + 0.008);
   env.gain.setTargetAtTime(peak * 0.12, when + 0.08, 0.32);  // 押し続けても約0.7秒で弱まる（10/2 短く）
   [o1, lfo].forEach(o => { o.start(when); track(o); });
+  cleanup(o1, [o1, lfo, vib, lp, mix, dry, env, ...parts]);
   let stopped = false;
   return {
     stop(t){
@@ -609,7 +615,7 @@ function click(when, level, dest, ac = ctx){ // level 2=downbeat 1=secondary 0=n
   g.gain.setValueAtTime(0.0001, when);
   g.gain.exponentialRampToValueAtTime(peak, when + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
-  o.connect(g).connect(dest || clickBus); o.start(when); o.stop(when + 0.06); track(o);
+  o.connect(g).connect(dest || clickBus); o.start(when); o.stop(when + 0.06); track(o); cleanup(o, [o, g]);
 }
 const beatLevel = (i, beats) => i === 0 ? 2 : (beats === 6 && i === 3) ? 1 : 0;
 
@@ -630,19 +636,19 @@ function kick(ac, dest, t, v = 1){
   o.type = 'sine'; o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.12);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.0 * v, t + 0.004);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
-  o.connect(g).connect(dest); o.start(t); o.stop(t + 0.4); track(o);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + 0.4); track(o); cleanup(o, [o, g]);
 }
 function snare(ac, dest, t, v = 1){
   const n = noise(ac), hp = ac.createBiquadFilter(), g = ac.createGain();
   hp.type = 'highpass'; hp.frequency.value = 1400;
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.55 * v, t + 0.003);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + 0.22); track(n);
+  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + 0.22); track(n); cleanup(n, [n, hp, g]);
   const o = ac.createOscillator(), og = ac.createGain();
   o.type = 'triangle'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
   og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.45 * v, t + 0.003);
   og.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-  o.connect(og).connect(dest); o.start(t); o.stop(t + 0.14); track(o);
+  o.connect(og).connect(dest); o.start(t); o.stop(t + 0.14); track(o); cleanup(o, [o, og]);
 }
 function hat(ac, dest, t, v = 1, open = false){
   const n = noise(ac), hp = ac.createBiquadFilter(), g = ac.createGain();
@@ -650,7 +656,7 @@ function hat(ac, dest, t, v = 1, open = false){
   const len = open ? 0.28 : 0.05;
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * v, t + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + len + 0.02); track(n);
+  n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + len + 0.02); track(n); cleanup(n, [n, hp, g]);
 }
 const range = (n, step) => Array.from({ length: Math.round(n / step) }, (_, i) => +(i * step).toFixed(4));
 const PATTERNS_4 = {
