@@ -94,6 +94,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .chord-row{flex-wrap:nowrap;gap:6px}
 #progSel,#keySel{height:32px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:13px;padding:0 8px}
 #keySel{width:74px}
+#progSel{max-width:36%;min-width:0;text-overflow:ellipsis}
 .chord-now{flex:1;min-width:0;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chord-now.list{white-space:normal;font-size:11px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .chord-now b{font-size:22px;color:var(--accent);font-weight:600;margin-right:6px}
@@ -1021,7 +1022,8 @@ function showChord(c){
     pcs = chordPcs(c.key, c.ch);
   } else if (P) {
     const names = P.chords.map(ch => chordName(settings.key, ch));
-    html = names.length > 4 ? names.slice(0, 4).join('-') + '<br>' + names.slice(4).join('-') : names.join('-');
+    const half = Math.ceil(names.length / 2);
+    html = names.join('-').length > 13 ? names.slice(0, half).join('-') + '<br>' + names.slice(half).join('-') : names.join('-');
   }
   // キー（メジャースケール）の7音＝使える音。コードが鳴っている間はその3音を強く塗る
   const key = c && c.ch ? c.key : settings.key;
