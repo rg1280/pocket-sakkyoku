@@ -456,7 +456,10 @@ function ensureAudio(){
     ctx = new AC({ latencyHint: 'interactive' });
     master = ctx.createDynamicsCompressor();
     master.threshold.value = -14; master.ratio.value = 4;
-    master.connect(ctx.destination);
+    const limiter = ctx.createDynamicsCompressor(); // 重なって割れそうな音を最後で抑える
+    limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.1;
+    const out = ctx.createGain(); out.gain.value = 0.85;
+    master.connect(limiter).connect(out).connect(ctx.destination);
     pianoBus = ctx.createGain(); pianoBus.connect(master);
     clickBus = ctx.createGain(); clickBus.connect(master);
     chordBus = ctx.createGain(); chordBus.connect(master);
@@ -504,57 +507,54 @@ function pianoVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   const o1 = ac.createOscillator(); o1.type = 'triangle'; o1.frequency.value = f;
   const o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 2;
   const g2 = ac.createGain(); g2.gain.setValueAtTime(0.35, when); g2.gain.setTargetAtTime(0.02, when, 0.25);
-  const o3 = ac.createOscillator(); o3.type = 'sine'; o3.frequency.value = f; o3.detune.value = 4;
-  o1.connect(lp); o2.connect(g2).connect(lp); o3.connect(lp); lp.connect(g); g.connect(dest);
-  const peak = 0.26 * vel;
+  o1.connect(lp); o2.connect(g2).connect(lp); lp.connect(g); g.connect(dest);
+  const peak = 0.4 * vel; // 発振器を1つ減らした分、実測で音量を合わせた
   g.gain.setValueAtTime(0.0001, when);
   g.gain.linearRampToValueAtTime(peak, when + 0.006);
   g.gain.setTargetAtTime(peak * 0.28, when + 0.006, 0.45);
-  [o1, o2, o3].forEach(o => o.start(when));
+  [o1, o2].forEach(o => o.start(when));
   let stopped = false;
   return {
     stop(t){
       if (stopped) return; stopped = true;
       t = Math.max(t, ac.currentTime);
       g.gain.setTargetAtTime(0, t, 0.07);
-      [o1, o2, o3].forEach(o => { try { o.stop(t + 0.6); } catch (e) {} });
+      [o1, o2].forEach(o => { try { o.stop(t + 0.6); } catch (e) {} });
     }
   };
 }
-// 歌声風：のこぎり波2本を母音「ア」の響き（フォルマント）に通し、遅れてかかるビブラートで伸ばす
+// 歌声風：のこぎり波を母音「ア」の響き（フォルマント）に通し、遅れてかかるビブラートで伸ばす
+// ⚠iPhoneで処理落ち（ジリジリ）したため部品を減らしてある（10/2）。足すときは処理の重さに注意
 function singVoice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   const f = freq(m);
   const o1 = ac.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = f;
-  const o2 = ac.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = f; o2.detune.value = 6;
   const lfo = ac.createOscillator(); lfo.frequency.value = 5.4;
   const vib = ac.createGain(); vib.gain.setValueAtTime(0, when); vib.gain.setValueAtTime(0, when + 0.25); vib.gain.linearRampToValueAtTime(f * 0.008, when + 0.7);
-  lfo.connect(vib); vib.connect(o1.frequency); vib.connect(o2.frequency);
-  const src = ac.createGain(); src.gain.value = 0.5; o1.connect(src); o2.connect(src);
-  const pre = ac.createBiquadFilter(); pre.type = 'lowpass'; pre.frequency.value = 3800; src.connect(pre);
+  lfo.connect(vib); vib.connect(o1.frequency);
   const mix = ac.createGain();
-  [[750, 5, 1], [1150, 7, 0.6], [2700, 9, 0.22]].forEach(([fr, q, gn]) => {
+  [[750, 5, 1], [1150, 7, 0.6]].forEach(([fr, q, gn]) => {
     const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = q;
-    const g = ac.createGain(); g.gain.value = gn; pre.connect(bp).connect(g).connect(mix);
+    const g = ac.createGain(); g.gain.value = gn; o1.connect(bp).connect(g).connect(mix);
   });
   const body = ac.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = Math.min(f * 2.5, 1200);
-  const bg = ac.createGain(); bg.gain.value = 0.35; pre.connect(body).connect(bg).connect(mix);
+  const bg = ac.createGain(); bg.gain.value = 0.35; o1.connect(body).connect(bg).connect(mix);
   const env = ac.createGain(); mix.connect(env); env.connect(dest);
   const peak = SING_GAIN * vel;
   env.gain.setValueAtTime(0.0001, when);
   env.gain.linearRampToValueAtTime(peak, when + 0.008);
   env.gain.setTargetAtTime(peak * 0.25, when + 0.15, 0.7);   // 押し続けると約1.5秒でゆっくり弱まる
-  [o1, o2, lfo].forEach(o => o.start(when));
+  [o1, lfo].forEach(o => o.start(when));
   let stopped = false;
   return {
     stop(t){
       if (stopped) return; stopped = true;
       t = Math.max(t, ac.currentTime);
       env.gain.setTargetAtTime(0, t, 0.035);
-      [o1, o2, lfo].forEach(o => { try { o.stop(t + 0.3); } catch (e) {} });
+      [o1, lfo].forEach(o => { try { o.stop(t + 0.3); } catch (e) {} });
     }
   };
 }
-const SING_GAIN = 1.25; // ピアノと同じくらいの大きさになるよう実測で合わせた
+const SING_GAIN = 1.1; // 軽くした後の音量を実測で前と同じにそろえた
 // メロディー（鍵盤・テイク再生・音で保存）の音色。コードは常にピアノ
 function voice(m, when, vel = 0.85, ac = ctx, dest = pianoBus){
   return (settings.timbre === 'piano' ? pianoVoice : singVoice)(m, when, vel, ac, dest);
