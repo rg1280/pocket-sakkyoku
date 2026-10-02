@@ -233,7 +233,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <select id="rhythmSel" aria-label="リズムの種類"><option value="click">クリック</option><option value="8beat">8ビート</option><option value="16beat">16ビート</option><option value="4uchi">4つ打ち</option><option value="ballad">バラード</option><option value="shuffle">シャッフル</option></select>
       </div>
       <div class="row chord-row">
-        <select id="progSel" aria-label="コード進行"><option value="none">コードなし</option><option value="oudou">王道進行</option><option value="canon">カノン進行</option><option value="loop">洋楽ループ</option><option value="five">5トーン（発声練習）</option></select>
+        <select id="progSel" aria-label="コード進行"><option value="none">コードなし</option><option value="oudou">王道進行</option><option value="canon">カノン進行</option><option value="loop">洋楽ループ</option><option value="iiv">I-IV-V（スパークル型）</option><option value="five">5トーン（発声練習）</option></select>
         <select id="keySel" aria-label="キー"></select>
         <div class="chord-now" id="chordNow"></div>
       </div>
@@ -659,7 +659,8 @@ const PROGS = {
   five:  { name: '5トーン', five: true, chords: [] },
   oudou: { name: '王道進行', chords: [[5, 'M'], [7, 'M'], [4, 'm'], [9, 'm']] },
   canon: { name: 'カノン進行', chords: [[0, 'M'], [7, 'M'], [9, 'm'], [4, 'm'], [5, 'M'], [0, 'M'], [5, 'M'], [7, 'M']] },
-  loop:  { name: '洋楽ループ', chords: [[9, 'm'], [5, 'M'], [0, 'M'], [7, 'M']] }
+  loop:  { name: '洋楽ループ', chords: [[9, 'm'], [5, 'M'], [0, 'M'], [7, 'M']] },
+  iiv:   { name: 'I-IV-V', chords: [[0, 'M'], [5, 'M'], [7, 'M'], [0, 'M']] }
 };
 const SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 const FLAT = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
