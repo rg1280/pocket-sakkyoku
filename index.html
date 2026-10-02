@@ -884,7 +884,7 @@ function buildKeyboard(){
   const hiEnd = buildRow($('#kbHi'), hi, nWhite);
   $('#kbRange').textContent = '上 ' + noteName(hi) + '–' + noteName(hiEnd) + ' ／ 下 ' + noteName(lo) + '–' + noteName(loEnd);
   active.forEach(a => keyOn(a.midi, true));
-  shownChord = '';
+  shownChord = ''; if (!metro.on) showChord(null); // repaint key colours on the new keys
 }
 function keyOn(m, on){ (keyEls.get(m) || []).forEach(el => el.classList.toggle('down', on)); }
 const active = new Map(); // pointerId -> {midi, v, recNote}
