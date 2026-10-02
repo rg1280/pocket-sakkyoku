@@ -681,6 +681,8 @@ function metroStart(at, chordOffset){
   ensureAudio();
   metro.on = true; metro.idx = 0; metro.next = at != null ? at : ctx.currentTime + 0.08;
   metro.queue = []; metro.chordQ = []; metro.chordOffset = chordOffset || 0;
+  metro.clickGain = ctx.createGain(); metro.clickGain.connect(clickBus);
+  metro.chordGain = ctx.createGain(); metro.chordGain.connect(chordBus);
   clearInterval(metro.timer);
   metro.timer = setInterval(metroTick, 25);
   metroTick();
@@ -690,6 +692,8 @@ function metroStart(at, chordOffset){
 }
 function metroStop(){
   metro.on = false; clearInterval(metro.timer); metro.queue = []; metro.chordQ = [];
+  [metro.clickGain, metro.chordGain].forEach(g => { if (g) try { g.disconnect(); } catch (e) {} });
+  metro.clickGain = metro.chordGain = null;
   paintBeats(-1); showChord(null);
   wakeLock(false);
   $('#metroBtn').setAttribute('aria-pressed', 'false');
@@ -698,10 +702,10 @@ function metroStop(){
 function metroTick(){
   while (metro.next < ctx.currentTime + 0.12) {
     const b = settings.beats, i = metro.idx % b;
-    beatSound(metro.next, i, b, settings.rhythm, spb());
+    beatSound(metro.next, i, b, settings.rhythm, spb(), metro.clickGain);
     if (i === 0) {
       const ch = chordAt(settings.prog, 0, metro.idx / b - metro.chordOffset);
-      if (ch) playChord(ctx, chordBus, metro.next, spb() * b, settings.key, ch);
+      if (ch) playChord(ctx, metro.chordGain, metro.next, spb() * b, settings.key, ch);
       metro.chordQ.push({ t: metro.next, ch, key: settings.key, prog: settings.prog, bar: metro.idx / b - metro.chordOffset });
     }
     metro.queue.push({ t: metro.next, i });
@@ -1329,7 +1333,17 @@ $('#wavShare').addEventListener('click', async () => {
 });
 
 window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(() => { if (!$('#viewMelody').hidden) buildKeyboard(); if (!$('#viewTakes').hidden) renderTakes(); }, 150); });
-window.addEventListener('pagehide', () => { active.forEach((_, id) => release(id)); });
+function stopAllSound(){
+  active.forEach((_, id) => release(id)); downPtrs.clear();
+  if (rec.active) recStop();           // 録音中なら、戻ったときに「削除／保存」を選べる
+  if (metro.on) metroStop();
+  stopPlayback();
+  if (silentEl) silentEl.pause();
+  if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); // 出力そのものを止める（次に触ると再開）
+}
+window.addEventListener('pagehide', stopAllSound);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopAllSound(); });
+window.addEventListener('blur', () => { if (document.visibilityState === 'hidden') stopAllSound(); });
 
 /* ---------- boot ---------- */
 if (!Object.keys(songs).length) sampleSong();
