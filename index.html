@@ -131,6 +131,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .take-btns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .mini{white-space:nowrap}
 .mini.arrange{background:#3A2B5C;color:#D9C8FF}
+.arr-list{display:grid;gap:8px}
+.arr-opt{background:var(--surface);border-radius:14px;padding:12px 14px;text-align:left;display:grid;gap:3px;box-shadow:var(--shadow)}
+.arr-opt b{font-size:15px;color:#D9C8FF}
+.arr-opt span{font-size:12px;color:var(--muted);line-height:1.5}
 .take-note{font-size:11.5px;color:var(--muted);line-height:1.6}
 #adjSheet select{height:38px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:14px;padding:0 10px;width:100%}
 .adj-bpm{display:flex;align-items:center;gap:10px}
@@ -377,6 +381,25 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <label class="adj-check"><input type="checkbox" id="adjMove" checked> キーを変えたら、メロディーも同じだけ移す</label></div>
     <button class="mini play" id="adjPlay" style="justify-self:start">▶ 試しに聴く</button>
     <div class="save-actions"><button class="btn save-del" id="adjToKb">鍵盤の設定にも使う</button><button class="btn save-keep" id="adjSave">保存</button></div>
+  </div>
+</div>
+<div class="sheet" id="arrSheet" hidden role="dialog" aria-label="アレンジ">
+  <h3>アレンジ <button class="close" data-close>閉じる</button></h3>
+  <div class="sheet-body">
+    <div class="set-row"><span class="lbl" id="arrTitle"></span>
+      <span class="sub">1つの技を曲全体にかけた版を、新しいメモ番号で保存します。元のメモはそのまま残ります。</span></div>
+    <div class="arr-list">
+      <button class="arr-opt" data-arr="kui"><b>食い気味リズム</b><span>拍の頭の音をそろえて8分音符ぶん前へ。同じ音でノリだけ変わる</span></button>
+      <button class="arr-opt" data-arr="reharm"><b>コード替え（自動合わせ）</b><span>近い雰囲気の別の進行に替え、拍の頭の音だけ新しいコードに合わせる</span></button>
+      <button class="arr-opt" data-arr="chorus"><b>サビ版（高く）</b><span>キーの中で3度上へ。最後の音は主音へ戻して締める</span></button>
+      <button class="arr-opt" data-arr="answer"><b>答えのフレーズ</b><span>前半はそのまま。後半を同じリズム・逆の上下で作り直し、主音で終える</span></button>
+      <button class="arr-opt" data-arr="harmony"><b>ハモリ</b><span>メロディーの3度上のハモリを、別のメモとして作る</span></button>
+    </div>
+    <div class="set-row"><span class="lbl">AI（Claude）に頼む</span>
+      <span class="sub">① 依頼文をコピー → ② Claudeアプリに貼って送る → ③ 返ってきた答えを全部コピーして下に貼る → ④ 取り込む</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="mini play" id="aiCopy">① 依頼文をコピー</button><a class="mini" id="aiOpen" href="https://claude.ai/new" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;color:var(--ink)">② Claudeを開く</a></div>
+      <textarea id="aiPaste" placeholder="③ Claudeの答えをここに貼る（「POCKET:」で始まる行が入っていればOK）" style="width:100%;min-height:90px;border:0;background:var(--surface-2);border-radius:10px;padding:10px;font-size:13px"></textarea>
+      <button class="mini" id="aiImport" style="justify-self:start">④ 取り込む</button></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -1238,7 +1261,7 @@ function renderTakes(){
     const adj = document.createElement('button'); adj.className = 'mini'; adj.textContent = '調整';
     adj.addEventListener('click', () => openAdjust(s, t));
     const arr = document.createElement('button'); arr.className = 'mini arrange'; arr.textContent = 'アレンジ';
-    arr.addEventListener('click', () => arrangeTake(s, t));
+    arr.addEventListener('click', () => openArrange(s, t));
     const del = document.createElement('button'); del.className = 'mini danger'; del.textContent = '削除'; del.style.marginLeft = 'auto';
     let armT = null;
     del.addEventListener('click', () => {
@@ -1295,7 +1318,7 @@ function renderSettings(){
 let toastT = null;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
 function openSheet(id){ $('#scrim').hidden = false; $(id).hidden = false; }
-function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; $('#adjSheet').hidden = true; pending = null; if (adj.preview && play.id === adj.preview.id) stopPlayback(); }
+function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; $('#adjSheet').hidden = true; $('#arrSheet').hidden = true; pending = null; if (adj.preview && play.id === adj.preview.id) stopPlayback(); }
 let lock = null;
 async function wakeLock(on){
   try {
@@ -1620,106 +1643,147 @@ $('#adjToKb').addEventListener('click', () => {
   saveSettings(); renderTempo(); buildBeats(); setStatus(); toast('鍵盤のテンポ・リズム・コード・キーをこの内容にしました');
 });
 
-/* ---------- アレンジ（複製してメロディー作りのコツ1〜6を当てる） ----------
-   6 コード進行を近い雰囲気の別の進行に替える → 1 リズム（半拍遅らせて入る・語尾を伸ばす）
-   → 4 2小節おきに高さだけずらす（同じリズムで1音上へ） → 3 大きく跳んで戻る・最高音は1回だけ
-   → 2 長い音をコードの音から少しずらす（9th・6th） → 5 キーの外の和音の小節で1音だけキーの外へ */
+/* ---------- アレンジ ----------
+   10/3 作り直し：コツをくじ引きでばらばらに当てる方式は「メロディーにならない・ヒントにならない」と本人評価。
+   → 1回に1つの技を曲全体へ一貫してかけ、最後に「拍の頭で伸ばす音がコードとぶつかっていないか」を直す。 */
 const REHARM = { oudou: 'komuro', komuro: 'oudou', canon: 'fifties', fifties: 'canon', loop: 'oudou', iiv: 'junkan',
   junkan: 'fifties', hana: 'creep', creep: 'hana', cliche: 'komuro', marusa: 'twofive', twofive: 'marusa' };
-function arrangeTake(song, take){
-  if (PROGS[take.prog] && PROGS[take.prog].five) { toast('発声練習の録音はアレンジできません'); return; }
-  const key = take.key || 0, bar = take.beats, log = [];
-  const scale = [0, 2, 4, 5, 7, 9, 11].map(x => (key + x) % 12);
-  const inScale = p => scale.includes(((p % 12) + 12) % 12);
-  const stepUp = p => { let q = p + 1; while (!inScale(q)) q++; return q; };
-  const stepDown = p => { let q = p - 1; while (!inScale(q)) q--; return q; };
-  const rnd = pr => Math.random() < pr;
-  let notes = take.notes.map(n => n.slice()).sort((a, b) => a[1] - b[1]);
-  if (!notes.length) return;
-
-  // 6) コード進行を替える
-  const prog = REHARM[take.prog] || (PROGS[take.prog] ? take.prog : 'oudou');
-  if (prog !== take.prog) log.push('コードを' + PROGS[prog].name + 'に');
-  const chordPcsAt = beat => { const ch = chordAt(prog, 0, Math.floor(beat / bar)); return ch ? chordPcs(key, ch) : [key, (key + 4) % 12, (key + 7) % 12]; };
-  const phraseOf = n => Math.floor(n[1] / (bar * 2));
-
-  // 1) リズム：フレーズの頭を半拍遅らせる／フレーズの最後の音を伸ばす
-  let r1 = 0, r2 = 0;
-  const phrases = [...new Set(notes.map(phraseOf))];
-  phrases.forEach(ph => {
-    const ns = notes.filter(n => phraseOf(n) === ph); if (!ns.length) return;
-    const first = ns[0], prev = notes[notes.indexOf(first) - 1];
-    if (r1 < 3 && Math.abs(first[1] % 1) < 1e-6 && first[2] > 0.6 && (!prev || prev[1] + prev[2] <= first[1] - 0.25) && rnd(0.55)) {
-      first[1] += 0.5; first[2] = Math.max(0.25, first[2] - 0.5); r1++;
-    }
-    const last = ns[ns.length - 1], next = notes[notes.indexOf(last) + 1];
-    const room = (next ? next[1] : take.len) - (last[1] + last[2]);
-    if (r2 < 3 && room >= 0.5 && rnd(0.6)) { last[2] += Math.min(1, room - 0.1); r2++; }
-  });
-  if (r1) log.push(r1 + 'か所を半拍遅らせて入る');
-  if (r2) log.push(r2 + 'か所の語尾を伸ばす');
-
-  // 4) 2小節おきのフレーズを、同じリズムのまま1音上へ（ゼクエンツ）
-  let seq = 0;
-  phrases.filter(ph => ph % 2 === 1).forEach(ph => {
-    if (seq >= 2 || !rnd(0.5)) return;
-    notes.forEach(n => { if (phraseOf(n) === ph) n[0] = stepUp(n[0]); }); seq++;
-  });
-  if (seq) log.push(seq + 'フレーズを1音上へずらす');
-
-  // 3) 後半のフレーズの頭で大きく跳ぶ（6度前後）→ 次の音は隣へ戻す。最高音は1回だけ
-  const half = notes.filter(n => n[1] >= take.len / 2);
-  const jumpAt = half.find((n, i) => i > 0 && n[2] >= 0.5);
-  if (jumpAt) {
-    const i = notes.indexOf(jumpAt), prev = notes[i - 1];
-    if (prev) {
-      let target = prev[0] + 9; while (!inScale(target)) target--;
-      if (target > jumpAt[0] && target <= 84) {
-        jumpAt[0] = target;
-        const nx = notes[i + 1]; if (nx && nx[0] < target - 2 && nx[0] > target - 9) nx[0] = stepDown(target);
-        log.push('後半で6度跳んで戻る');
-      }
-    }
-  }
-  const top = Math.max(...notes.map(n => n[0]));
-  const tops = notes.filter(n => n[0] === top);
-  if (tops.length > 1) {
-    const keep = tops.reduce((a, b) => (b[2] > a[2] ? b : a));
-    tops.forEach(n => { if (n !== keep) n[0] = stepDown(n[0]); });
-    log.push('最高音を1回だけに');
-  }
-
-  // 2) 長い音（1拍以上）をコードの音から9th・6thへずらす
-  let ten = 0;
+const SC = [0, 2, 4, 5, 7, 9, 11];
+// キーの中の「何番目の音か」（度数）と音の高さの行き来。キーの外の音は下の度数に寄せる
+function toDeg(p, key){ const r = p - key, o = Math.floor(r / 12), x = r - o * 12; let i = 0; SC.forEach((v, k) => { if (v <= x) i = k; }); return o * 7 + i; }
+function fromDeg(d, key){ const o = Math.floor(d / 7); return key + o * 12 + SC[d - o * 7]; }
+const pcOf = p => ((p % 12) + 12) % 12;
+const isStrong = n => Math.abs(n[1] - Math.round(n[1])) < 1e-6 && n[2] >= 0.5; // 拍の頭で始まり、ある程度伸ばす音
+// 拍の頭で伸ばす音を、その小節のコードの音へ一番近い動きで合わせる
+function fitToChords(notes, prog, progStart, key, beats){
+  let c = 0;
   notes.forEach(n => {
-    if (ten >= 3 || n[2] < 1 || !rnd(0.6)) return;
-    const pcs = chordPcsAt(n[1]), pc = ((n[0] % 12) + 12) % 12;
-    if (!pcs.includes(pc)) return;
-    const cand = [2, -1, 1, -2].map(d => n[0] + d).find(q => inScale(q) && !pcs.includes(((q % 12) + 12) % 12));
-    if (cand != null) { n[0] = cand; ten++; }
+    if (!isStrong(n)) return;
+    const ch = chordAt(prog, progStart, Math.floor(n[1] / beats)); if (!ch) return;
+    const pcs = chordPcs(key, ch); if (pcs.includes(pcOf(n[0]))) return;
+    for (const d of [-1, 1, -2, 2, -3, 3, -4, 4]) { if (pcs.includes(pcOf(n[0] + d))) { n[0] += d; c++; return; } }
   });
-  if (ten) log.push(ten + 'か所の長い音をコードの音から少しずらす');
-
-  // 5) キーの外の音を含む和音の小節で、いちばん長い音を1つだけキーの外の音へ
-  let outs = 0;
-  const bars = Math.ceil(take.len / bar);
-  for (let b = 0; b < bars && outs < 2; b++) {
-    const ch = chordAt(prog, 0, b); if (!ch) continue;
-    const foreign = chordPcs(key, ch).filter(pc => !scale.includes(pc)); if (!foreign.length) continue;
-    const inBar = notes.filter(n => Math.floor(n[1] / bar) === b); if (!inBar.length) continue;
-    const n = inBar.reduce((a, c) => (c[2] > a[2] ? c : a));
-    const cand = [-1, 1, -2, 2].map(d => n[0] + d).find(q => foreign.includes(((q % 12) + 12) % 12));
-    if (cand != null) { n[0] = cand; outs++; }
-  }
-  if (outs) log.push(outs + 'か所でキーの外の音を使う');
-
-  notes = notes.map(([p, st, d]) => [clamp(p, 36, 88), +st.toFixed(3), +d.toFixed(3)]).sort((a, b) => a[1] - b[1]);
-  const no = nextMemoNo(); settings.memoNo = no; saveSettings();
-  const nt = Object.assign({}, take, { id: 't' + uid(), name: 'メモ' + no, notes, prog, progStart: 0, createdAt: Date.now(),
-    arrangedFrom: take.name, arrangeLog: log.length ? log : ['コード進行だけ替えた'] });
-  song.takes.unshift(nt); touchSong(song); renderTakes(); $('#takes').scrollTop = 0;
-  toast('メモ' + no + ' に' + take.name + 'のアレンジ版を保存しました');
+  return c;
 }
+// 最後の音をキーの主音（一番近いもの）へ
+function endOnTonic(notes, key){
+  const last = notes[notes.length - 1]; if (!last) return;
+  const cands = [-12, 0, 12].map(o => last[0] - pcOf(last[0] - key) + o);
+  last[0] = cands.reduce((a, b) => (Math.abs(b - last[0]) < Math.abs(a - last[0]) ? b : a));
+}
+// 音域が外れたらオクターブで戻す
+function keepRange(notes){
+  const hi = Math.max(...notes.map(n => n[0])), lo = Math.min(...notes.map(n => n[0]));
+  const sh = hi > 81 ? -12 : lo < 40 ? 12 : 0;
+  if (sh) notes.forEach(n => { n[0] += sh; });
+}
+const ARRANGERS = {
+  kui(t, notes){
+    let c = 0;
+    notes.forEach((n, i) => {
+      if (Math.abs(n[1] - Math.round(n[1])) > 1e-6 || Math.round(n[1]) % 2 !== 0 || n[1] < 0.5) return; // 1拍目・3拍目の頭
+      const prev = notes[i - 1];
+      if (prev && prev[1] + prev[2] > n[1] - 0.5) { if (n[1] - 0.5 - prev[1] < 0.25) return; prev[2] = n[1] - 0.5 - prev[1]; }
+      n[1] -= 0.5; n[2] += 0.5; c++;
+    });
+    return { log: [c + 'か所を8分音符ぶん食って入る'], ok: c > 0 };
+  },
+  reharm(t, notes, out){
+    out.prog = REHARM[t.prog] || 'oudou'; out.progStart = 0;
+    const c = fitToChords(notes, out.prog, 0, out.key, t.beats);
+    return { log: ['コードを' + PROGS[out.prog].name + 'に替え', '拍の頭の' + c + '音を新しいコードに合わせた'], ok: true };
+  },
+  chorus(t, notes, out){
+    notes.forEach(n => { n[0] = fromDeg(toDeg(n[0], out.key) + 2, out.key); });
+    endOnTonic(notes, out.key); keepRange(notes);
+    const c = fitToChords(notes, out.prog, out.progStart, out.key, t.beats);
+    return { log: ['全体をキーの中で3度上へ', '最後を主音で締める'].concat(c ? ['拍の頭の' + c + '音をコードに合わせた'] : []), ok: true };
+  },
+  answer(t, notes, out){
+    const bars = Math.round(t.len / t.beats), half = Math.floor(bars / 2) * t.beats;
+    const A = notes.filter(n => n[1] < half && n[1] >= 0);
+    if (bars < 2 || A.length < 3) return { log: ['短すぎて答えのフレーズを作れません（2小節以上・3音以上）'], ok: false };
+    const axis = toDeg(A[0][0], out.key);
+    const B = A.map(([pp, st, d]) => [fromDeg(2 * axis - toDeg(pp, out.key), out.key), st + half, d]); // 上下を逆に
+    B[0][0] = A[0][0]; // 答えも同じ音から始める
+    endOnTonic(B, out.key); keepRange(B);
+    notes.splice(0, notes.length, ...notes.filter(n => n[1] < half), ...B);
+    const c = fitToChords(notes, out.prog, out.progStart, out.key, t.beats);
+    return { log: ['前半はそのまま', '後半を同じリズム・逆の上下で作り直し主音で終えた'].concat(c ? ['拍の頭の' + c + '音をコードに合わせた'] : []), ok: true };
+  },
+  harmony(t, notes, out){
+    notes.forEach(n => { n[0] = fromDeg(toDeg(n[0], out.key) + 2, out.key); });
+    const c = fitToChords(notes, out.prog, out.progStart, out.key, t.beats);
+    return { log: [t.name + 'の3度上のハモリ'].concat(c ? ['拍の頭の' + c + '音をコードに合わせた'] : []), ok: true };
+  }
+};
+const ARR_NAMES = { kui: '食い気味リズム', reharm: 'コード替え', chorus: 'サビ版', answer: '答えのフレーズ', harmony: 'ハモリ' };
+const arr = { song: null, take: null };
+function openArrange(song, take){
+  if (PROGS[take.prog] && PROGS[take.prog].five) { toast('発声練習の録音はアレンジできません'); return; }
+  arr.song = song; arr.take = take; $('#aiPaste').value = '';
+  $('#arrTitle').textContent = (song.title || 'タイトル未定') + ' ／ ' + take.name;
+  openSheet('#arrSheet');
+}
+function saveArranged(song, take, notes, extra, log){
+  const no = nextMemoNo(); settings.memoNo = no; saveSettings();
+  notes = notes.map(([pp, st, d]) => [clamp(Math.round(pp), 36, 88), +(+st).toFixed(3), +Math.max(0.05, +d).toFixed(3)]).sort((a, b) => a[1] - b[1]);
+  const nt = Object.assign({}, take, extra, { id: 't' + uid(), name: 'メモ' + no, notes, createdAt: Date.now(), arrangedFrom: take.name, arrangeLog: log });
+  song.takes.unshift(nt); touchSong(song); closeSheets(); renderTakes(); $('#takes').scrollTop = 0;
+  toast('メモ' + no + ' に' + take.name + 'の' + log[0] + 'を保存しました');
+}
+document.querySelectorAll('[data-arr]').forEach(b => b.addEventListener('click', () => {
+  const t = arr.take, kind = b.dataset.arr; if (!t) return;
+  const notes = t.notes.map(n => n.slice()).sort((a, c) => a[1] - c[1]);
+  const out = { prog: PROGS[t.prog] ? t.prog : 'oudou', progStart: PROGS[t.prog] ? (t.progStart || 0) : 0, key: t.key || 0 };
+  const r = ARRANGERS[kind](t, notes, out);
+  if (!r.ok) { toast(r.log[0]); return; }
+  saveArranged(arr.song, t, notes, { prog: out.prog, progStart: out.progStart, key: out.key }, [ARR_NAMES[kind]].concat(r.log));
+}));
+
+/* ---------- AI（Claude）に頼む：依頼文をコピー → Claudeアプリ → 答えを貼って取り込む ---------- */
+function aiPrompt(song, t){
+  const key = t.key || 0, P = PROGS[t.prog];
+  const chords = P && !P.five ? P.chords.map(ch => chordName(key, ch)).join(' - ') + '（1小節に1つ・繰り返し）' : 'なし';
+  return [
+    'あなたは作曲の先生です。シンガーソングライターの私が録ったメロディーを、ユニークでセンスのよいアレンジ版に作り直してください。',
+    '',
+    '【条件】',
+    '- キー：' + KEY_LABELS[key] + 'メジャー／テンポ：' + t.bpm + '／拍子：' + (t.beats === 6 ? '6/8' : t.beats + '/4'),
+    '- コード進行：' + chords,
+    '- 長さ：' + t.len + '拍（' + Math.round(t.len / t.beats) + '小節）。長さは変えない',
+    '- 好み：オルタナJ-ROCK。跳躍のある力強いメロディー、少し奇抜、真剣な雰囲気。ありきたりは避ける',
+    '- 歌える音域：MIDIの48〜72を中心に',
+    '- 拍の頭で伸ばす音はコードと調和させる。元のメロディーの良いところ（覚えやすい部分）は残す',
+    song.concept ? '- 曲のコンセプト：' + song.concept.replace(/\n/g, ' ').slice(0, 200) : '',
+    '',
+    '【元のメロディー】[MIDI音番号, 開始拍, 長さ(拍)] の一覧（開始拍は0から）',
+    JSON.stringify(t.notes),
+    '',
+    '【答え方】どこをどう変えたかを日本語で2〜3行で説明したあと、最後に必ず次の1行だけでメロディーを返してください（改行を入れない）。',
+    'POCKET:[[音番号,開始拍,長さ],...]'
+  ].filter(x => x !== '').join('\n');
+}
+$('#aiCopy').addEventListener('click', () => {
+  if (!arr.take) return;
+  const txt = aiPrompt(arr.song, arr.take);
+  const ok = () => toast('依頼文をコピーしました。Claudeアプリに貼って送ってください');
+  const fb = () => { const ta = $('#aiPaste'); ta.value = txt; ta.select(); toast('下の欄に出しました。長押しでコピーしてください'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, fb); else fb();
+});
+$('#aiImport').addEventListener('click', () => {
+  const t = arr.take; if (!t) return;
+  const raw = $('#aiPaste').value;
+  const m = /POCKET:\s*(\[[\s\S]*\])/.exec(raw) || /(\[\s*\[[\s\S]*\]\s*\])/.exec(raw);
+  let notes = null;
+  try { notes = JSON.parse(m[1].replace(/\s+/g, '')); } catch (e) {}
+  if (!Array.isArray(notes) || !notes.length || !notes.every(n => Array.isArray(n) && n.length >= 3 && n.slice(0, 3).every(x => typeof x === 'number' && isFinite(x)))) {
+    toast('取り込めませんでした。Claudeの答えを「POCKET:」の行まで全部貼ってください'); return;
+  }
+  notes = notes.map(n => n.slice(0, 3)).filter(n => n[1] < t.len + t.beats);
+  const why = raw.split('POCKET:')[0].replace(/\s+/g, ' ').trim().slice(0, 90);
+  saveArranged(arr.song, t, notes, {}, ['AI（Claude）のアレンジ'].concat(why ? [why] : []));
+});
 
 window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(() => { if (!$('#viewMelody').hidden) buildKeyboard(); if (!$('#viewTakes').hidden) renderTakes(); }, 150); });
 // iPhone(Safari)では通り道を外すだけでは予約済みの音が止まらなかった（10/2）。音量0＋外す＋発振器停止の三重で止める
