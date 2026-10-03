@@ -1653,14 +1653,19 @@ const SC = [0, 2, 4, 5, 7, 9, 11];
 function toDeg(p, key){ const r = p - key, o = Math.floor(r / 12), x = r - o * 12; let i = 0; SC.forEach((v, k) => { if (v <= x) i = k; }); return o * 7 + i; }
 function fromDeg(d, key){ const o = Math.floor(d / 7); return key + o * 12 + SC[d - o * 7]; }
 const pcOf = p => ((p % 12) + 12) % 12;
-const isStrong = n => Math.abs(n[1] - Math.round(n[1])) < 1e-6 && n[2] >= 0.5; // 拍の頭で始まり、ある程度伸ばす音
-// 拍の頭で伸ばす音を、その小節のコードの音へ一番近い動きで合わせる
+// 小節の強い拍（4拍子なら1・3拍目、それ以外は1拍目）で始まり、1拍以上伸ばす音だけを見る
+const isStrong = (n, beats) => Math.abs(n[1] - Math.round(n[1])) < 1e-6 && n[2] >= 1 && (Math.round(n[1]) % beats === 0 || (beats === 4 && Math.round(n[1]) % beats === 2));
+// 強い拍で伸ばす音のうち「本当にぶつかる音」だけを、コードの音へ一番近い動きで合わせる。
+// ぶつかる＝キーの外（コードにも無い）か、コードの音の半音上。9th・6thなどのおしゃれな音は残す（10/3 合わせすぎで平らになったため）
 function fitToChords(notes, prog, progStart, key, beats){
   let c = 0;
+  const scalePcs = SC.map(x => (key + x) % 12);
   notes.forEach(n => {
-    if (!isStrong(n)) return;
+    if (!isStrong(n, beats)) return;
     const ch = chordAt(prog, progStart, Math.floor(n[1] / beats)); if (!ch) return;
-    const pcs = chordPcs(key, ch); if (pcs.includes(pcOf(n[0]))) return;
+    const pcs = chordPcs(key, ch), pc = pcOf(n[0]); if (pcs.includes(pc)) return;
+    const clash = !scalePcs.includes(pc) || pcs.some(x => (pc - x + 12) % 12 === 1);
+    if (!clash) return;
     for (const d of [-1, 1, -2, 2, -3, 3, -4, 4]) { if (pcs.includes(pcOf(n[0] + d))) { n[0] += d; c++; return; } }
   });
   return c;
@@ -1691,13 +1696,13 @@ const ARRANGERS = {
   reharm(t, notes, out){
     out.prog = REHARM[t.prog] || 'oudou'; out.progStart = 0;
     const c = fitToChords(notes, out.prog, 0, out.key, t.beats);
-    return { log: ['コードを' + PROGS[out.prog].name + 'に替え', '拍の頭の' + c + '音を新しいコードに合わせた'], ok: true };
+    return { log: ['コードを' + PROGS[out.prog].name + 'に替え', (c ? 'ぶつかる' + c + '音を新しいコードに合わせた' : 'メロディーはそのままで新しいコードに合った')], ok: true };
   },
   chorus(t, notes, out){
     notes.forEach(n => { n[0] = fromDeg(toDeg(n[0], out.key) + 2, out.key); });
     endOnTonic(notes, out.key); keepRange(notes);
     const c = fitToChords(notes, out.prog, out.progStart, out.key, t.beats);
-    return { log: ['全体をキーの中で3度上へ', '最後を主音で締める'].concat(c ? ['拍の頭の' + c + '音をコードに合わせた'] : []), ok: true };
+    return { log: ['全体をキーの中で3度上へ', '最後を主音で締める'].concat(c ? ['ぶつかる' + c + '音をコードに合わせた'] : []), ok: true };
   },
   answer(t, notes, out){
     const bars = Math.round(t.len / t.beats), half = Math.floor(bars / 2) * t.beats;
@@ -1709,12 +1714,12 @@ const ARRANGERS = {
     endOnTonic(B, out.key); keepRange(B);
     notes.splice(0, notes.length, ...notes.filter(n => n[1] < half), ...B);
     const c = fitToChords(notes, out.prog, out.progStart, out.key, t.beats);
-    return { log: ['前半はそのまま', '後半を同じリズム・逆の上下で作り直し主音で終えた'].concat(c ? ['拍の頭の' + c + '音をコードに合わせた'] : []), ok: true };
+    return { log: ['前半はそのまま', '後半を同じリズム・逆の上下で作り直し主音で終えた'].concat(c ? ['ぶつかる' + c + '音をコードに合わせた'] : []), ok: true };
   },
   harmony(t, notes, out){
     notes.forEach(n => { n[0] = fromDeg(toDeg(n[0], out.key) + 2, out.key); });
     const c = fitToChords(notes, out.prog, out.progStart, out.key, t.beats);
-    return { log: [t.name + 'の3度上のハモリ'].concat(c ? ['拍の頭の' + c + '音をコードに合わせた'] : []), ok: true };
+    return { log: [t.name + 'の3度上のハモリ'].concat(c ? ['ぶつかる' + c + '音をコードに合わせた'] : []), ok: true };
   }
 };
 const ARR_NAMES = { kui: '食い気味リズム', reharm: 'コード替え', chorus: 'サビ版', answer: '答えのフレーズ', harmony: 'ハモリ' };
