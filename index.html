@@ -1281,7 +1281,7 @@ function renderTakes(){
       const order = join.ids.indexOf(t.id);
       const sel = document.createElement('button'); sel.className = 'mini ' + (order >= 0 ? 'play' : '');
       sel.textContent = order >= 0 ? (order + 1) + '番目（外す）' : 'これを選ぶ';
-      sel.addEventListener('click', () => { order >= 0 ? join.ids.splice(order, 1) : join.ids.push(t.id); renderTakes(); });
+      sel.addEventListener('click', () => { order >= 0 ? join.ids.splice(order, 1) : join.ids.push(t.id); paintJoin(); renderTakes(); });
       btns.append(pb, sel);
       if (order >= 0) el.classList.add('picked');
     } else btns.append(pb, wv, adj, tr, del);
@@ -1678,7 +1678,7 @@ function trimmedTake(t, s0, e0){
 function openTrim(song, take){
   trim.song = song; trim.take = take; trim.s = 0; trim.e = barsOf(take);
   $('#trimTitle').textContent = (song.title || 'タイトル未定') + ' ／ ' + take.name + '（' + barsOf(take) + '小節）';
-  openSheet('#trimSheet'); requestAnimationFrame(paintTrim);
+  openSheet('#trimSheet'); paintTrim(); requestAnimationFrame(paintTrim); // 先に表示、幅が決まったら描き直す
 }
 function paintTrim(){
   const t = trim.take, bars = barsOf(t);
