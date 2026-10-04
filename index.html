@@ -164,10 +164,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .kb .b{position:absolute;top:0;height:60%;background:var(--key-black);border-radius:0 0 6px 6px;z-index:2;box-shadow:inset 0 -5px 0 rgba(255,255,255,.08)}
 .kb .down{background:var(--key-down)!important;box-shadow:none}
 .kb .b .bo{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:8px;font-family:var(--mono);color:#A9ADB8;pointer-events:none}
-.kb .w.sounding{background:#F7D648!important}
-.kb .w.sounding .n,.kb .w.sounding .o{color:#3B2C00}
-.kb .b.sounding{background:linear-gradient(var(--key-black) 30%,#F7D648 30%)!important}
-.kb .b.sounding .bo{color:#3B2C00}
+.kb .w.cue{background:#A9CBFF!important}
+.kb .w.cue .n,.kb .w.cue .o{color:#14315E}
+.kb .b.cue{background:linear-gradient(var(--key-black) 30%,#3D7BE6 30%)!important}
+.kb .w.sounding{background:#B48AF5!important}
+.kb .w.sounding .n,.kb .w.sounding .o{color:#2A0F57}
+.kb .b.sounding{background:linear-gradient(var(--key-black) 30%,#9B66F0 30%)!important}
+.kb .b.sounding .bo,.kb .b.cue .bo{color:#FFFFFF}
 .kb .w.hint{background:linear-gradient(var(--key-white),var(--key-white) 70%,var(--accent-soft))}
 .kb-pad{height:calc(6px + env(safe-area-inset-bottom,0px))}
 
@@ -819,7 +822,7 @@ function chordAt(prog, progStart, bar){
    1.5オクターブ：ド・ミ・ソ・ド・ミ・ソ・ファ・レ・シ・ソ・ファ・レ＋ド（2拍）。1小節目の頭に合図の和音。
                最高音が出発の1.5オクターブ上になるので、出発は低め（G2〜F#3）。上がる回数は 5トーン14回・1.5オクターブ10回 */
 const DRILLS = {
-  five:  { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], base: 48, label: 'ドレミファソファミレド',
+  five:  { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], base: 48, label: 'ドレミファソファミレド',
            sing: [0, 2, 4, 5, 7] },
   oct15: { steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], base: 43, label: 'ドミソドミソファレシソファレド',
            sing: [0, 4, 7, 12, 16, 19, 17, 14, 11, 7, 5, 2] }
@@ -836,12 +839,13 @@ function backingBar(ac, dest, t, bar, beats, secPerBeat, prog, key, progStart){
   const root = fiveRoot(key, progStart, bar, prog);
   const note = (m, at, len, v = 0.8) => {
     pianoVoice(m, t + at * secPerBeat, v, ac, dest).stop(t + (at + len) * secPerBeat - 0.02);
-    if (ac === ctx) vizQ.push({ s: t + at * secPerBeat, e: t + (at + len) * secPerBeat - 0.02, m }); // 鍵盤を黄色く光らせる予定
+    if (ac === ctx) vizQ.push({ s: t + at * secPerBeat, e: t + (at + len) * secPerBeat - 0.02, m }); // 鳴っている間、鍵盤を紫に
   };
   if (P.drill === 'oct15') {
     const seq = DRILLS.oct15.sing;
     if ((progStart + bar) % 2 === 0) {
       [0, 4, 7].forEach(x => note(root + x, 0, 1, 0.4)); note(root - 12, 0, 1, 0.55);  // 合図の和音（1拍）
+      cueMark(ac, root, t, t + 2 * beats * secPerBeat - 0.02);
       seq.slice(0, 8).forEach((x, i) => note(root + x, i * 0.5, 0.5));                  // ド・ミ・ソ・ド・ミ・ソ・ファ・レ
     } else {
       seq.slice(8).forEach((x, i) => note(root + x, i * 0.5, 0.5));                      // シ・ソ・ファ・レ
@@ -851,6 +855,7 @@ function backingBar(ac, dest, t, bar, beats, secPerBeat, prog, key, progStart){
   }
   if ((progStart + bar) % 2 === 0) {
     [0, 4, 7].forEach(x => note(root + x, 0, 2, 0.45)); note(root - 12, 0, 2, 0.6);   // 合図の和音
+    cueMark(ac, root, t, t + 2 * beats * secPerBeat - 0.02);
     [0, 2, 4, 5].forEach((x, i) => note(root + x, 2 + i * 0.5, 0.5));                // ド・レ・ミ・ファ
   } else {
     [7, 5, 4, 2].forEach((x, i) => note(root + x, i * 0.5, 0.5));                    // ソ・ファ・ミ・レ
@@ -1196,13 +1201,19 @@ function showChord(c){
 }
 
 /* ---------- 発声練習の見本で、いま鳴っている鍵盤を黄色に ---------- */
-let vizQ = [], vizOn = new Set();
+// 発声練習の色：合図の和音（ド・ミ・ソ）＝青でそのスケールの終わりまで残す／いま鳴っている音＝紫（10/4）
+let vizQ = [], vizOn = new Set(), cueOn = new Set();
+function cueMark(ac, root, s, e){ if (ac === ctx) [0, 4, 7].forEach(x => vizQ.push({ s, e, m: root + x, cue: true })); }
+function swapClass(prev, next, cls){
+  prev.forEach(m => { if (!next.has(m)) (keyEls.get(m) || []).forEach(el => el.classList.remove(cls)); });
+  next.forEach(m => { if (!prev.has(m)) (keyEls.get(m) || []).forEach(el => el.classList.add(cls)); });
+}
 function paintSounding(now){
   vizQ = vizQ.filter(v => v.e > now);
-  const on = new Set(vizQ.filter(v => v.s <= now).map(v => v.m));
-  vizOn.forEach(m => { if (!on.has(m)) (keyEls.get(m) || []).forEach(el => el.classList.remove('sounding')); });
-  on.forEach(m => { if (!vizOn.has(m)) (keyEls.get(m) || []).forEach(el => el.classList.add('sounding')); });
-  vizOn = on;
+  const live = vizQ.filter(v => v.s <= now);
+  const on = new Set(live.filter(v => !v.cue).map(v => v.m)), cue = new Set(live.filter(v => v.cue).map(v => v.m));
+  swapClass(vizOn, on, 'sounding'); swapClass(cueOn, cue, 'cue');
+  vizOn = on; cueOn = cue;
 }
 function clearSounding(){ vizQ = []; paintSounding(Infinity); }
 
@@ -1210,7 +1221,7 @@ function clearSounding(){ vizQ = []; paintSounding(Infinity); }
 function frame(){
   if (ctx) {
     const now = ctx.currentTime;
-    if (vizQ.length || vizOn.size) paintSounding(now);
+    if (vizQ.length || vizOn.size || cueOn.size) paintSounding(now);
     if (metro.on) {
       while (metro.queue.length > 1 && metro.queue[1].t <= now) metro.queue.shift();
       const q = metro.queue[0];
