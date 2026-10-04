@@ -130,7 +130,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .take canvas{width:100%;height:40px;display:block;border-radius:8px;background:var(--surface-2)}
 .take-btns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .mini{white-space:nowrap}
-.mini.trim{background:#1F3A4D;color:#BFE3FF}
+.mini.trim{background:#1F3A4D;color:#BFE3FF;font-size:15px;padding:0 12px}
 .take.picked{outline:2px solid #7FC4FF}
 #trimSheet canvas{width:100%;height:130px;display:block;border-radius:10px;background:var(--surface-2);touch-action:none;cursor:ew-resize}
 .trim-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -163,6 +163,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .kb .w .o{font-size:9px;font-family:var(--mono);color:#8A8F9B}
 .kb .b{position:absolute;top:0;height:60%;background:var(--key-black);border-radius:0 0 6px 6px;z-index:2;box-shadow:inset 0 -5px 0 rgba(255,255,255,.08)}
 .kb .down{background:var(--key-down)!important;box-shadow:none}
+.kb .b .bo{position:absolute;left:0;right:0;bottom:5px;text-align:center;font-size:8px;font-family:var(--mono);color:#A9ADB8;pointer-events:none}
+.kb .w.sounding{background:#F7D648!important}
+.kb .w.sounding .n,.kb .w.sounding .o{color:#3B2C00}
+.kb .b.sounding{background:linear-gradient(var(--key-black) 30%,#F7D648 30%)!important}
+.kb .b.sounding .bo{color:#3B2C00}
 .kb .w.hint{background:linear-gradient(var(--key-white),var(--key-white) 70%,var(--accent-soft))}
 .kb-pad{height:calc(6px + env(safe-area-inset-bottom,0px))}
 
@@ -190,6 +195,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   padding:14px 16px calc(16px + env(safe-area-inset-bottom,0px));max-width:760px;margin:0 auto}
 .sheet h3{font-family:var(--display);font-size:18px;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
 .sheet-body{overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.lib-row{background:var(--surface);border-radius:14px;padding:10px 12px;display:grid;gap:6px;box-shadow:var(--shadow)}
+.lib-row.picked{outline:2px solid #7FC4FF}
+.lib-row .lib-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.lib-row .lib-top span{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
 .song-item{background:var(--surface);border-radius:14px;padding:12px 14px;text-align:left;display:grid;gap:3px;box-shadow:var(--shadow)}
 .song-item.cur{outline:2px solid var(--accent)}
 .song-item b{font-size:15px}
@@ -316,9 +325,23 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 <div class="scrim" id="scrim" hidden></div>
 <div class="sheet" id="songsSheet" hidden role="dialog" aria-label="曲の一覧">
   <h3>曲の一覧 <button class="close" data-close>閉じる</button></h3>
-  <div class="sheet-body">
+  <div class="seg" id="libSeg" style="margin-bottom:8px"><button data-v="songs" aria-pressed="true">曲</button><button data-v="takes" aria-pressed="false">録音</button></div>
+  <div class="sheet-body" id="libSongs">
     <button class="new-song" id="newSong">＋ 新しい曲</button>
     <div id="songList" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+  <div class="sheet-body" id="libTakes" hidden>
+    <span class="sub" style="font-size:12px;color:var(--muted)">全部の曲の録音です。「選ぶ」を押した順につなげて、いま開いている曲に新しいメモとして保存できます。</span>
+    <div id="allTakes" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button class="new-song" id="libJoin">選んだ順につなげる</button>
+  </div>
+</div>
+<div class="sheet" id="moveSheet" hidden role="dialog" aria-label="移動">
+  <h3>移動先の曲 <button class="close" data-close>閉じる</button></h3>
+  <div class="sheet-body">
+    <span class="sub" id="moveInfo" style="font-size:12px;color:var(--muted)"></span>
+    <button class="new-song" id="moveNew">＋ 新しい曲を作って移す</button>
+    <div id="moveList" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
 </div>
 <div class="sheet" id="settingsSheet" hidden role="dialog" aria-label="設定">
@@ -811,7 +834,10 @@ function backingBar(ac, dest, t, bar, beats, secPerBeat, prog, key, progStart){
   const P = PROGS[prog]; if (!P || bar < 0) return;
   if (!P.five) { const ch = chordAt(prog, progStart, bar); if (ch) playChord(ac, dest, t, beats * secPerBeat, key, ch); return; }
   const root = fiveRoot(key, progStart, bar, prog);
-  const note = (m, at, len, v = 0.8) => pianoVoice(m, t + at * secPerBeat, v, ac, dest).stop(t + (at + len) * secPerBeat - 0.02);
+  const note = (m, at, len, v = 0.8) => {
+    pianoVoice(m, t + at * secPerBeat, v, ac, dest).stop(t + (at + len) * secPerBeat - 0.02);
+    if (ac === ctx) vizQ.push({ s: t + at * secPerBeat, e: t + (at + len) * secPerBeat - 0.02, m }); // 鍵盤を黄色く光らせる予定
+  };
   if (P.drill === 'oct15') {
     const seq = DRILLS.oct15.sing;
     if ((progStart + bar) % 2 === 0) {
@@ -852,7 +878,7 @@ function metroStop(){
   metro.on = false; clearInterval(metro.timer); metro.queue = []; metro.chordQ = [];
   [metro.clickGain, metro.chordGain].forEach(cutGain); metro.oscs.forEach(o => { try { o.stop(); } catch (e) {} }); metro.oscs = [];
   metro.clickGain = metro.chordGain = null;
-  paintBeats(-1); showChord(null);
+  paintBeats(-1); showChord(null); clearSounding();
   wakeLock(false);
   $('#metroBtn').setAttribute('aria-pressed', 'false');
   $('#metroBtn').textContent = 'リズムを鳴らす';
@@ -1026,7 +1052,7 @@ function playTick(){
 }
 function stopPlayback(){
   if (!play.id) return;
-  clearTimeout(play.timer); clearInterval(play.sched); play.ev = []; play.evIdx = 0;
+  clearTimeout(play.timer); clearInterval(play.sched); play.ev = []; play.evIdx = 0; clearSounding();
   if (ctx) {
     const now = ctx.currentTime;
     [play.clickGain, play.chordGain, play.melGain].forEach(cutGain);
@@ -1059,12 +1085,13 @@ function buildRow(row, startMidi, nWhite){
       if (settings.labels !== 'none') {
         const n = document.createElement('span'); n.className = 'n';
         n.textContent = (settings.labels === 'doremi' ? NAMES_DO : NAMES_AB)[pc]; k.appendChild(n);
-        if (pc === 0) { const o = document.createElement('span'); o.className = 'o'; o.textContent = 'C' + (Math.floor(m / 12) - 1); k.appendChild(o); }
+        const o = document.createElement('span'); o.className = 'o'; o.textContent = noteName(m); k.appendChild(o); // 全部の白鍵に高さ（10/4）
       }
       row.appendChild(k); add(m, k); wi++;
     } else {
       const k = document.createElement('div'); k.className = 'b'; k.dataset.midi = m;
       k.style.left = (wi * w - bw / 2) + 'px'; k.style.width = bw + 'px';
+      if (settings.labels !== 'none') { const o = document.createElement('span'); o.className = 'bo'; o.textContent = noteName(m).replace('#', '♯'); k.appendChild(o); }
       row.appendChild(k); add(m, k);
     }
     m++;
@@ -1141,7 +1168,6 @@ function showChord(c){
       const D = drillOf(c.prog), root = fiveRoot(c.key, 0, c.bar, c.prog), st = fiveStep(0, c.bar, c.prog);
       const up = D.steps[(st + 1) % D.steps.length] > D.steps[st];
       html = '<b>' + name(root) + '</b>' + (up ? '↑ 上がる' : '↓ 下がる');
-      fiveKeys = D.sing.map(x => root + x);
     } else {
       const D = drillOf(settings.prog);
       html = D.label + '<br>' + name(drillStart(settings.key, settings.prog)) + 'から半音ずつ上下';
@@ -1169,10 +1195,22 @@ function showChord(c){
   }));
 }
 
+/* ---------- 発声練習の見本で、いま鳴っている鍵盤を黄色に ---------- */
+let vizQ = [], vizOn = new Set();
+function paintSounding(now){
+  vizQ = vizQ.filter(v => v.e > now);
+  const on = new Set(vizQ.filter(v => v.s <= now).map(v => v.m));
+  vizOn.forEach(m => { if (!on.has(m)) (keyEls.get(m) || []).forEach(el => el.classList.remove('sounding')); });
+  on.forEach(m => { if (!vizOn.has(m)) (keyEls.get(m) || []).forEach(el => el.classList.add('sounding')); });
+  vizOn = on;
+}
+function clearSounding(){ vizQ = []; paintSounding(Infinity); }
+
 /* ---------- animation loop: beats, status, playhead ---------- */
 function frame(){
   if (ctx) {
     const now = ctx.currentTime;
+    if (vizQ.length || vizOn.size) paintSounding(now);
     if (metro.on) {
       while (metro.queue.length > 1 && metro.queue[1].t <= now) metro.queue.shift();
       const q = metro.queue[0];
@@ -1269,7 +1307,11 @@ function renderTakes(){
     pb.addEventListener('click', () => playTake(t));
     const adj = document.createElement('button'); adj.className = 'mini'; adj.textContent = '調整';
     adj.addEventListener('click', () => openAdjust(s, t));
-    const tr = document.createElement('button'); tr.className = 'mini trim'; tr.textContent = 'トリミング';
+    const tr = document.createElement('button'); tr.className = 'mini trim'; tr.textContent = '✂'; tr.setAttribute('aria-label', 'トリミング');
+    const dup = document.createElement('button'); dup.className = 'mini'; dup.textContent = '複製';
+    dup.addEventListener('click', () => duplicateTake(s, t));
+    const mv = document.createElement('button'); mv.className = 'mini'; mv.textContent = '移動';
+    mv.addEventListener('click', () => openMove(s, t));
     tr.addEventListener('click', () => openTrim(s, t));
     const del = document.createElement('button'); del.className = 'mini danger'; del.textContent = '削除'; del.style.marginLeft = 'auto';
     let armT = null;
@@ -1292,7 +1334,7 @@ function renderTakes(){
       sel.addEventListener('click', () => { order >= 0 ? join.ids.splice(order, 1) : join.ids.push(t.id); paintJoin(); renderTakes(); });
       btns.append(pb, sel);
       if (order >= 0) el.classList.add('picked');
-    } else btns.append(pb, wv, adj, tr, del);
+    } else btns.append(pb, wv, adj, tr, dup, mv, del);
     el.append(head, c, btns);
     if (t.arrangeLog && t.arrangeLog.length) {
       const note = document.createElement('div'); note.className = 'take-note';
@@ -1335,7 +1377,7 @@ function renderSettings(){
 let toastT = null;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
 function openSheet(id){ $('#scrim').hidden = false; $(id).hidden = false; }
-function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; $('#adjSheet').hidden = true; $('#trimSheet').hidden = true; pending = null; if (typeof trim !== 'undefined' && trim.preview && play.id === trim.preview.id) stopPlayback(); if (adj.preview && play.id === adj.preview.id) stopPlayback(); }
+function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; $('#adjSheet').hidden = true; $('#trimSheet').hidden = true; $('#moveSheet').hidden = true; pending = null; if (typeof trim !== 'undefined' && trim.preview && play.id === trim.preview.id) stopPlayback(); if (adj.preview && play.id === adj.preview.id) stopPlayback(); }
 let lock = null;
 async function wakeLock(on){
   try {
@@ -1351,8 +1393,18 @@ function setBpm(v){
 }
 $('#rhythmSel').addEventListener('change', e => { settings.rhythm = e.target.value; saveSettings(); });
 $('#keySel').innerHTML = KEY_LABELS.map((k, i) => '<option value="' + i + '">キー ' + k + '</option>').join('');
-$('#progSel').addEventListener('change', e => { settings.prog = e.target.value;
-  if (PROGS[settings.prog] && PROGS[settings.prog].five && settings.beats !== 4) { settings.beats = 4; renderTempo(); buildBeats(); if (metro.on) { metroStop(); metroStart(); } toast('発声練習は4/4で練習します'); }
+$('#progSel').addEventListener('change', e => {
+  const wasDrill = !!(PROGS[settings.prog] && PROGS[settings.prog].five);
+  settings.prog = e.target.value;
+  const isDrill = !!(PROGS[settings.prog] && PROGS[settings.prog].five);
+  // ボイトレの既定（10/4 本人指示）：BPM110・キーC・4/4・バラード。練習をやめたら、それまでの設定に戻す
+  if (isDrill && !wasDrill) {
+    settings.beforeDrill = { bpm: settings.bpm, key: settings.key, beats: settings.beats, rhythm: settings.rhythm };
+    Object.assign(settings, { bpm: 110, key: 0, beats: 4, rhythm: 'ballad' });
+  } else if (!isDrill && wasDrill && settings.beforeDrill) {
+    Object.assign(settings, settings.beforeDrill); settings.beforeDrill = null;
+  }
+  if (isDrill !== wasDrill) { renderTempo(); buildBeats(); if (metro.on) { metroStop(); metroStart(); } }
   saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#keySel').addEventListener('change', e => { settings.key = +e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#chordVol').addEventListener('input', e => { settings.chordVol = +e.target.value; saveSettings(); applyVolumes(); });
@@ -1472,7 +1524,7 @@ $('#sunoWav').addEventListener('click', () => {
 });
 $('#lyrics').addEventListener('input', () => { clearTimeout(window.__sunoT); window.__sunoT = setTimeout(renderSuno, 300); });
 
-$('#openSongs').addEventListener('click', () => { renderSongList(); openSheet('#songsSheet'); });
+$('#openSongs').addEventListener('click', () => { renderSongList(); libTab('songs'); openSheet('#songsSheet'); });
 $('#openSettings').addEventListener('click', () => { renderSettings(); openSheet('#settingsSheet'); });
 $('#scrim').addEventListener('click', () => { if (!pending) closeSheets(); });
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
@@ -1771,11 +1823,9 @@ function paintJoin(){
 }
 $('#joinStart').addEventListener('click', () => { join.on = !join.on; join.ids = []; paintJoin(); renderTakes(); });
 $('#joinCancel').addEventListener('click', () => { join.on = false; join.ids = []; paintJoin(); renderTakes(); });
-$('#joinDo').addEventListener('click', () => {
-  const song = cur(); if (!song) return;
-  const list = join.ids.map(id => song.takes.find(t => t.id === id)).filter(Boolean);
-  if (list.length < 2) { toast('2つ以上選んでください'); return; }
-  if (list.some(t => t.beats !== list[0].beats)) { toast('拍子が違うメモはつなげられません'); return; }
+function joinTakes(song, list){
+  if (list.length < 2) { toast('2つ以上選んでください'); return false; }
+  if (list.some(t => t.beats !== list[0].beats)) { toast('拍子が違うメモはつなげられません'); return false; }
   const base = list[0], notes = [], parts = [], B = base.beats;
   const keepBacking = list.every(t => t.backing !== false && !t.backOffset && onBar(t.len, B));
   let off = 0;
@@ -1784,7 +1834,6 @@ $('#joinDo').addEventListener('click', () => {
     if (keepBacking) partsOf(t).forEach(x => parts.push(Object.assign({}, x, { startBar: x.startBar + Math.round(off / B) })));
     off += t.len;
   });
-  const offBars = off / B;
   const no = nextMemoNo(); settings.memoNo = no; saveSettings();
   const names = list.map(t => t.name);
   const nt = Object.assign({}, base, { id: 't' + uid(), name: 'メモ' + no, notes: notes.sort((a, b) => a[1] - b[1]), len: +off.toFixed(3),
@@ -1793,8 +1842,87 @@ $('#joinDo').addEventListener('click', () => {
     arrangeLog: [names.join(' → ') + 'の順につなげた'].concat(list.some(t => t.bpm !== base.bpm) ? ['テンポは' + base.bpm + 'にそろえた'] : [])
       .concat(keepBacking ? [] : ['伴奏なし（「調整」で付けられます）']) });
   song.takes.unshift(nt); touchSong(song);
-  join.on = false; join.ids = []; paintJoin(); renderTakes(); $('#takes').scrollTop = 0;
   toast('メモ' + no + ' に' + names.join('＋') + 'をつなげて保存しました');
+  return true;
+}
+$('#joinDo').addEventListener('click', () => {
+  const song = cur(); if (!song) return;
+  const list = join.ids.map(id => song.takes.find(t => t.id === id)).filter(Boolean);
+  if (!joinTakes(song, list)) return;
+  join.on = false; join.ids = []; paintJoin(); renderTakes(); $('#takes').scrollTop = 0;
+});
+
+/* ---------- 曲の一覧の「録音」タブ：全部の曲の録音から選んでつなげる ---------- */
+const lib = { ids: [] };
+const takeById = id => { for (const so of Object.values(songs)) { const t = so.takes.find(x => x.id === id); if (t) return { song: so, take: t }; } return null; };
+function libTab(which){
+  $('#libSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === which ? 'true' : 'false'));
+  $('#libSongs').hidden = which !== 'songs'; $('#libTakes').hidden = which !== 'takes';
+  if (which === 'takes') renderAllTakes();
+}
+$('#libSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) libTab(b.dataset.v); });
+function renderAllTakes(){
+  const box = $('#allTakes'); box.innerHTML = '';
+  const rows = [];
+  Object.values(songs).forEach(so => so.takes.forEach(t => rows.push({ so, t })));
+  rows.sort((a, b) => (b.t.createdAt || 0) - (a.t.createdAt || 0));
+  if (!rows.length) { box.textContent = 'まだ録音がありません'; return; }
+  rows.forEach(({ so, t }) => {
+    const order = lib.ids.indexOf(t.id);
+    const el = document.createElement('div'); el.className = 'lib-row' + (order >= 0 ? ' picked' : '');
+    const top = document.createElement('div'); top.className = 'lib-top';
+    const name = document.createElement('b'); name.textContent = t.name;
+    const meta = document.createElement('span'); meta.textContent = (so.title || 'タイトル未定') + ' · ' + fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM';
+    top.append(name, meta);
+    const btns = document.createElement('div'); btns.className = 'take-btns';
+    const pb = document.createElement('button'); pb.className = 'mini play'; pb.textContent = play.id === t.id ? '■ 止める' : '▶ 再生';
+    pb.addEventListener('click', () => { playTake(t); renderAllTakes(); });
+    const sel = document.createElement('button'); sel.className = 'mini' + (order >= 0 ? ' play' : '');
+    sel.textContent = order >= 0 ? (order + 1) + '番目（外す）' : '選ぶ';
+    sel.addEventListener('click', () => { order >= 0 ? lib.ids.splice(order, 1) : lib.ids.push(t.id); renderAllTakes(); });
+    btns.append(pb, sel); el.append(top, btns); box.appendChild(el);
+  });
+  $('#libJoin').textContent = lib.ids.length >= 2 ? lib.ids.length + '件を選んだ順につなげて「' + ((cur() || {}).title || 'タイトル未定') + '」に保存' : '選んだ順につなげる（2件以上選んでください）';
+}
+$('#libJoin').addEventListener('click', () => {
+  const song = cur() || newSong('');
+  const list = lib.ids.map(takeById).filter(Boolean).map(x => x.take);
+  if (!joinTakes(song, list)) return;
+  lib.ids = []; closeSheets(); tab('takes'); renderTakes(); $('#takes').scrollTop = 0;
+});
+
+/* ---------- 複製・移動 ---------- */
+function duplicateTake(song, take){
+  const no = nextMemoNo(); settings.memoNo = no; saveSettings();
+  const nt = Object.assign(JSON.parse(JSON.stringify(take)), { id: 't' + uid(), name: 'メモ' + no, createdAt: Date.now(),
+    arrangedFrom: take.name, arrangeKind: '複製', arrangeLog: ['そのまま複製'] });
+  song.takes.unshift(nt); touchSong(song); renderTakes(); $('#takes').scrollTop = 0;
+  toast(take.name + ' を複製して メモ' + no + ' にしました');
+}
+const mv = { song: null, take: null };
+function openMove(song, take){
+  mv.song = song; mv.take = take;
+  $('#moveInfo').textContent = take.name + ' を別の曲へ移します。元の曲からは無くなります。';
+  const box = $('#moveList'); box.innerHTML = '';
+  Object.values(songs).filter(so => so.id !== song.id).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).forEach(so => {
+    const b = document.createElement('button'); b.className = 'song-item';
+    const t = document.createElement('b'); t.textContent = so.title || 'タイトル未定';
+    const m = document.createElement('span'); m.textContent = 'メロディー ' + so.takes.length + '件';
+    b.append(t, m); b.addEventListener('click', () => moveTake(so)); box.appendChild(b);
+  });
+  openSheet('#moveSheet');
+}
+function moveTake(dest){
+  const { song, take } = mv; if (!song || !take || !dest) return;
+  if (play.id === take.id) stopPlayback();
+  song.takes = song.takes.filter(x => x.id !== take.id); dest.takes.unshift(take);
+  touchSong(song); touchSong(dest); closeSheets(); renderTakes();
+  toast(take.name + ' を「' + (dest.title || 'タイトル未定') + '」へ移しました');
+}
+$('#moveNew').addEventListener('click', () => {
+  const keep = settings.currentId, dest = newSong('');
+  settings.currentId = keep; saveSettings(); // 新しい曲は作るだけで、画面はいまの曲のまま
+  moveTake(dest);
 });
 
 window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(() => { if (!$('#viewMelody').hidden) buildKeyboard(); if (!$('#viewTakes').hidden) renderTakes(); }, 150); });
