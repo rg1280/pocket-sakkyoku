@@ -1261,7 +1261,7 @@ function renderTakes(){
     name.setAttribute('aria-label', 'テイク名');
     name.addEventListener('change', () => { t.name = name.value.trim() || t.name; touchSong(s); });
     const meta = document.createElement('span'); meta.className = 'take-meta';
-    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + (Math.abs(t.len / t.beats - Math.round(t.len / t.beats)) < 0.01 ? Math.round(t.len / t.beats) : (t.len / t.beats).toFixed(1)) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '') + (PROGS[t.prog] ? ' · ' + PROGS[t.prog].name + '(' + KEY_LABELS[t.key || 0] + ')' : '') + (t.parts && t.parts.length > 1 ? ' · ' + t.parts.length + 'つの部分' : '') + (t.backing === false ? ' · 伴奏なし' : '');
+    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + (Math.abs(t.len / t.beats - Math.round(t.len / t.beats)) < 0.01 ? Math.round(t.len / t.beats) : (t.len / t.beats).toFixed(1)) + '小節' + (t.backing !== false && t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '') + (t.backing !== false && PROGS[t.prog] ? ' · ' + PROGS[t.prog].name + '(' + KEY_LABELS[t.key || 0] + ')' : '') + (t.parts && t.parts.length > 1 ? ' · ' + t.parts.length + 'つの部分' : '') + (t.backing === false ? ' · 伴奏なし' : '');
     head.append(name, meta);
     const c = document.createElement('canvas');
     const btns = document.createElement('div'); btns.className = 'take-btns';
@@ -1699,6 +1699,7 @@ function trimGeom(){
   return { t, c, from, span, W: c.clientWidth, H: c.clientHeight };
 }
 const posLabel = (x, B) => { const bar = Math.floor(x / B), bt = x - bar * B; return (bar + 1) + '小節 ' + (+(bt + 1).toFixed(2)) + '拍'; };
+const endLabel = (x, B) => onBar(x, B) ? Math.round(x / B) + '小節目の終わり' : posLabel(x, B);
 function openTrim(song, take){
   trim.song = song; trim.take = take;
   const g = trimGeom(); trim.s = g.from; trim.e = take.len;
@@ -1709,7 +1710,7 @@ function paintTrim(){
   const { t, c, from, span, W, H } = trimGeom(), B = t.beats;
   trim.s = clamp(trim.s, from, t.len - TRIM_STEP); trim.e = clamp(trim.e, trim.s + TRIM_STEP, t.len);
   $('#trimSLabel').textContent = posLabel(trim.s, B);
-  $('#trimELabel').textContent = posLabel(trim.e, B);
+  $('#trimELabel').textContent = endLabel(trim.e, B);
   const keep = t.backing !== false && !(t.backOffset) && onBar(trim.s, B) && onBar(trim.e, B);
   $('#trimWarn').textContent = keep ? '小節の区切りで切るので、伴奏はそのまま残ります。'
     : '小節の途中で切るので、伴奏（リズム・コード）は外れます。つなげたあと「調整」で付け直せます。';
@@ -1754,7 +1755,7 @@ $('#trimSave').addEventListener('click', () => {
   if (!n.notes.length) { toast('この範囲には音がありません'); return; }
   const no = nextMemoNo(); settings.memoNo = no; saveSettings();
   const nt = Object.assign(n, { id: 't' + uid(), name: 'メモ' + no, createdAt: Date.now(), arrangedFrom: t.name, arrangeKind: 'トリミング',
-    arrangeLog: [posLabel(trim.s, t.beats) + '〜' + posLabel(trim.e, t.beats) + 'を残した'].concat(n.backing === false && t.backing !== false ? ['伴奏は外した（調整で付け直せます）'] : []) });
+    arrangeLog: [posLabel(trim.s, t.beats) + '〜' + endLabel(trim.e, t.beats) + 'を残した'].concat(n.backing === false && t.backing !== false ? ['伴奏は外した（調整で付け直せます）'] : []) });
   trim.song.takes.unshift(nt); touchSong(trim.song); closeSheets(); renderTakes(); $('#takes').scrollTop = 0;
   toast('メモ' + no + ' に' + t.name + 'のトリミング版を保存しました');
 });
