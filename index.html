@@ -132,9 +132,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .mini{white-space:nowrap}
 .mini.trim{background:#1F3A4D;color:#BFE3FF}
 .take.picked{outline:2px solid #7FC4FF}
-#trimSheet canvas{width:100%;height:96px;display:block;border-radius:10px;background:var(--surface-2)}
+#trimSheet canvas{width:100%;height:130px;display:block;border-radius:10px;background:var(--surface-2);touch-action:none;cursor:ew-resize}
 .trim-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.trim-row b{font-family:var(--mono);font-size:15px;min-width:92px;text-align:center}
+.trim-row b{font-family:var(--mono);font-size:14px;min-width:120px;text-align:center}
+.trim-row .sub{min-width:42px}
 .take-note{font-size:11.5px;color:var(--muted);line-height:1.6}
 #adjSheet select{height:38px;border-radius:10px;border:0;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:14px;padding:0 10px;width:100%}
 .adj-bpm{display:flex;align-items:center;gap:10px}
@@ -380,6 +381,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="adj-row"><select id="adjRhythm" aria-label="リズム"></select><select id="adjKey" aria-label="キー"></select></div>
       <select id="adjProg" aria-label="コード進行"></select>
       <label class="adj-check"><input type="checkbox" id="adjMove" checked> キーを変えたら、メロディーも同じだけ移す</label></div>
+    <div class="set-row"><span class="lbl">伴奏（リズム・コード）</span>
+      <label class="adj-check"><input type="checkbox" id="adjBacking"> 伴奏を付ける</label>
+      <div class="trim-row"><span class="sub">始まり</span><button class="step" id="adjOff-">−</button><b id="adjOffLabel"></b><button class="step" id="adjOff+">＋</button></div>
+      <span class="sub">メロディーが小節の途中から始まるときは、伴奏の始まりを後ろへずらして合わせます（0.5拍ずつ）。</span></div>
     <button class="mini play" id="adjPlay" style="justify-self:start">▶ 試しに聴く</button>
     <div class="save-actions"><button class="btn save-del" id="adjToKb">鍵盤の設定にも使う</button><button class="btn save-keep" id="adjSave">保存</button></div>
   </div>
@@ -388,11 +393,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <h3>トリミング <button class="close" data-close>閉じる</button></h3>
   <div class="sheet-body">
     <div class="set-row"><span class="lbl" id="trimTitle"></span>
-      <span class="sub">残す範囲を小節で選びます。暗いところが切り取られます。保存すると新しいメモになり、元のメモは残ります。</span>
+      <span class="sub">枠の左右のつまみを指で動かして、残す部分を選びます。枠の外は切り取られます。保存すると新しいメモになり、元のメモは残ります。</span>
       <canvas id="trimCanvas"></canvas>
-      <div class="trim-row"><button class="step" id="trimS-">−</button><b id="trimSLabel"></b><button class="step" id="trimS+">＋</button></div>
-      <div class="trim-row"><button class="step" id="trimE-">−</button><b id="trimELabel"></b><button class="step" id="trimE+">＋</button></div>
-      <button class="mini" id="trimAuto" style="justify-self:start">前後の空白を自動で選ぶ</button></div>
+      <div class="trim-row"><span class="sub">はじめ</span><button class="step" id="trimS-">−</button><b id="trimSLabel"></b><button class="step" id="trimS+">＋</button></div>
+      <div class="trim-row"><span class="sub">おわり</span><button class="step" id="trimE-">−</button><b id="trimELabel"></b><button class="step" id="trimE+">＋</button></div>
+      <span class="sub">−／＋は16分音符ずつ動きます。</span>
+      <button class="mini" id="trimAuto" style="justify-self:start">前後の空白を自動で選ぶ</button>
+      <span class="sub" id="trimWarn"></span></div>
     <button class="mini play" id="trimPlay" style="justify-self:start">▶ この範囲を聴く</button>
     <div class="save-actions"><button class="btn save-del" data-close>やめる</button><button class="btn save-keep" id="trimSave">保存</button></div>
   </div>
@@ -994,10 +1001,11 @@ function playTake(take){
   take.notes.forEach(([p, s, d]) => ev.push({ t: t0 + s * b, f: () => {
     const v = voice(p, t0 + s * b, 0.85, ctx, play.melGain); v.stop(t0 + (s + d) * b); play.voices.push(v);
   } }));
-  if (settings.clickOnPlay) {
-    for (let k = 0; k * bar < take.len; k++) { const pt = partAt(take, k); ev.push({ t: t0 + k * bar * b, f: () => backingBar(ctx, play.chordGain, t0 + k * bar * b, k - pt.startBar, bar, b, pt.prog, pt.key || 0, pt.progStart || 0) }); }
-    for (let k = off; k < take.len; k++) {
-      const i = ((k % bar) + bar) % bar, rh = partAt(take, Math.floor(k / bar)).rhythm || 'click'; ev.push({ t: t0 + k * b, f: () => beatSound(t0 + k * b, i, bar, rh, b, play.clickGain) });
+  if (settings.clickOnPlay && take.backing !== false) {
+    const bo = take.backOffset || 0, tb = t0 + bo * b; // 伴奏の始まりをずらしたぶん
+    for (let k = 0; bo + k * bar < take.len; k++) { const pt = partAt(take, k); ev.push({ t: tb + k * bar * b, f: () => backingBar(ctx, play.chordGain, tb + k * bar * b, k - pt.startBar, bar, b, pt.prog, pt.key || 0, pt.progStart || 0) }); }
+    for (let k = bo ? 0 : off; bo + k < take.len; k++) {
+      const i = ((k % bar) + bar) % bar, rh = partAt(take, Math.floor(k / bar)).rhythm || 'click'; ev.push({ t: tb + k * b, f: () => beatSound(tb + k * b, i, bar, rh, b, play.clickGain) });
     }
   }
   ev.sort((x, y) => x.t - y.t);
@@ -1253,7 +1261,7 @@ function renderTakes(){
     name.setAttribute('aria-label', 'テイク名');
     name.addEventListener('change', () => { t.name = name.value.trim() || t.name; touchSong(s); });
     const meta = document.createElement('span'); meta.className = 'take-meta';
-    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + Math.round(t.len / t.beats) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '') + (PROGS[t.prog] ? ' · ' + PROGS[t.prog].name + '(' + KEY_LABELS[t.key || 0] + ')' : '') + (t.parts && t.parts.length > 1 ? ' · ' + t.parts.length + 'つの部分' : '');
+    meta.textContent = fmtDate(t.createdAt) + ' · ' + t.bpm + 'BPM · ' + (t.beats === 6 ? '6/8' : t.beats + '/4') + ' · ' + (Math.abs(t.len / t.beats - Math.round(t.len / t.beats)) < 0.01 ? Math.round(t.len / t.beats) : (t.len / t.beats).toFixed(1)) + '小節' + (t.rhythm && t.rhythm !== 'click' ? ' · ' + RHYTHMS[t.rhythm] : '') + (PROGS[t.prog] ? ' · ' + PROGS[t.prog].name + '(' + KEY_LABELS[t.key || 0] + ')' : '') + (t.parts && t.parts.length > 1 ? ' · ' + t.parts.length + 'つの部分' : '') + (t.backing === false ? ' · 伴奏なし' : '');
     head.append(name, meta);
     const c = document.createElement('canvas');
     const btns = document.createElement('div'); btns.className = 'take-btns';
@@ -1563,8 +1571,9 @@ async function renderWav(take, withClick){
   const chb = ac.createGain(); chb.gain.value = 0.55; chb.connect(comp);
   const t0 = 0.05 - off * b;
   take.notes.forEach(([p, st, d]) => { const v = voice(p, t0 + st * b, 0.85, ac, pb); v.stop(t0 + (st + d) * b); });
-  if (withClick) for (let k = 0; k * bar < take.len; k++) { const pt = partAt(take, k); backingBar(ac, chb, t0 + k * bar * b, k - pt.startBar, bar, b, pt.prog, pt.key || 0, pt.progStart || 0); }
-  if (withClick) for (let k = off; k < take.len; k++) beatSound(t0 + k * b, ((k % bar) + bar) % bar, bar, partAt(take, Math.floor(k / bar)).rhythm || 'click', b, cb, ac);
+  const bo = take.backOffset || 0, tb = t0 + bo * b, withBack = withClick && take.backing !== false;
+  if (withBack) for (let k = 0; bo + k * bar < take.len; k++) { const pt = partAt(take, k); backingBar(ac, chb, tb + k * bar * b, k - pt.startBar, bar, b, pt.prog, pt.key || 0, pt.progStart || 0); }
+  if (withBack) for (let k = bo ? 0 : off; bo + k < take.len; k++) beatSound(tb + k * b, ((k % bar) + bar) % bar, bar, partAt(take, Math.floor(k / bar)).rhythm || 'click', b, cb, ac);
   const buf = await ac.startRendering();
   const data = buf.getChannelData(0);
   let peak = 0; for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
@@ -1604,26 +1613,32 @@ $('#wavShare').addEventListener('click', async () => {
 
 
 /* ---------- 調整（テンポ・リズム・コード・キー） ---------- */
-const adj = { song: null, take: null, bpm: 100, rhythm: 'click', prog: 'none', key: 0, preview: null };
+const adj = { song: null, take: null, bpm: 100, rhythm: 'click', prog: 'none', key: 0, preview: null, off: 0 };
 $('#adjRhythm').innerHTML = $('#rhythmSel').innerHTML;
 $('#adjProg').innerHTML = $('#progSel').innerHTML;
 $('#adjKey').innerHTML = KEY_LABELS.map((k, i) => '<option value="' + i + '">キー ' + k + '</option>').join('');
 function openAdjust(song, take){
   adj.song = song; adj.take = take; adj.bpm = take.bpm; adj.rhythm = take.rhythm || 'click';
-  adj.prog = PROGS[take.prog] ? take.prog : 'none'; adj.key = take.key || 0;
+  adj.prog = PROGS[take.prog] ? take.prog : 'none'; adj.key = take.key || 0; adj.off = take.backOffset || 0;
+  $('#adjBacking').checked = take.backing !== false;
   $('#adjTitle').textContent = (song.title || 'タイトル未定') + ' ／ ' + take.name;
   paintAdjust(); openSheet('#adjSheet');
 }
 function paintAdjust(){
   $('#adjBpm').textContent = adj.bpm; $('#adjRange').value = adj.bpm;
   $('#adjRhythm').value = adj.rhythm; $('#adjProg').value = adj.prog; $('#adjKey').value = String(adj.key);
+  $('#adjOffLabel').textContent = adj.off ? adj.off + '拍あとから' : 'メロディーと同時';
 }
+[['adjOff-', -0.5], ['adjOff+', 0.5]].forEach(([id, d]) => document.getElementById(id).addEventListener('click', () => {
+  adj.off = clamp(adj.off + d, 0, adj.take.beats - 0.5); $('#adjBacking').checked = true; paintAdjust();
+}));
 // キーの差を -6〜+5 の半音に（近いほうへ移す）
 const keyShift = (from, to) => ((to - from) % 12 + 18) % 12 - 6;
 function adjustedTake(){
   const t = adj.take, shift = $('#adjMove').checked ? keyShift(t.key || 0, adj.key) : 0;
-  const same = adj.prog === (PROGS[t.prog] ? t.prog : 'none') && adj.key === (t.key || 0) && adj.rhythm === (t.rhythm || 'click');
-  return Object.assign({}, t, {
+  const backing = $('#adjBacking').checked;
+  const same = adj.prog === (PROGS[t.prog] ? t.prog : 'none') && adj.key === (t.key || 0) && adj.rhythm === (t.rhythm || 'click') && backing === (t.backing !== false);
+  return Object.assign({}, t, { backing, backOffset: adj.off,
     parts: same ? t.parts : null, // コード・キー・リズムを変えたら全体を1つにそろえる
     bpm: adj.bpm, rhythm: adj.rhythm, prog: adj.prog === 'none' ? null : adj.prog, key: adj.key,
     progStart: adj.prog === t.prog ? (t.progStart || 0) : 0,
@@ -1634,8 +1649,8 @@ const setAdjBpm = v => { adj.bpm = clamp(Math.round(v), 40, 220); paintAdjust();
 $('#adjDown').addEventListener('click', () => setAdjBpm(adj.bpm - 1));
 $('#adjUp').addEventListener('click', () => setAdjBpm(adj.bpm + 1));
 $('#adjRange').addEventListener('input', e => setAdjBpm(+e.target.value));
-$('#adjRhythm').addEventListener('change', e => { adj.rhythm = e.target.value; });
-$('#adjProg').addEventListener('change', e => { adj.prog = e.target.value; });
+$('#adjRhythm').addEventListener('change', e => { adj.rhythm = e.target.value; $('#adjBacking').checked = true; });
+$('#adjProg').addEventListener('change', e => { adj.prog = e.target.value; $('#adjBacking').checked = true; });
 $('#adjKey').addEventListener('change', e => { adj.key = +e.target.value; });
 $('#adjPlay').addEventListener('click', () => {
   if (adj.preview && play.id === adj.preview.id) { stopPlayback(); return; }
@@ -1644,7 +1659,7 @@ $('#adjPlay').addEventListener('click', () => {
 });
 $('#adjSave').addEventListener('click', () => {
   const n = adjustedTake();
-  Object.assign(adj.take, { bpm: n.bpm, rhythm: n.rhythm, prog: n.prog, key: n.key, progStart: n.progStart, notes: n.notes, parts: n.parts });
+  Object.assign(adj.take, { bpm: n.bpm, rhythm: n.rhythm, prog: n.prog, key: n.key, progStart: n.progStart, notes: n.notes, parts: n.parts, backing: n.backing, backOffset: n.backOffset });
   touchSong(adj.song); closeSheets(); renderTakes(); toast(adj.take.name + ' を調整しました');
 });
 $('#adjToKb').addEventListener('click', () => {
@@ -1654,17 +1669,20 @@ $('#adjToKb').addEventListener('click', () => {
   saveSettings(); renderTempo(); buildBeats(); setStatus(); toast('鍵盤のテンポ・リズム・コード・キーをこの内容にしました');
 });
 
-/* ---------- トリミング（小節単位で範囲を切り出し、新しいメモとして保存） ----------
-   10/3 本人指示：補正は廃止。サビ・Aメロ・Bメロを別々に録ったものの空白を詰め、余計なところを切るため。
-   小節単位で切るので、リズム・コードとの位置関係は崩れない。拍の頭より少し早く入る音（食い）は残す。 */
-const trim = { song: null, take: null, s: 0, e: 1, preview: null };
+/* ---------- トリミング（指で動かす枠で範囲を選び、新しいメモとして保存） ----------
+   10/4 本人指示：小節単位では切りたい所で切れない → 16分音符単位の自由な位置で切る。
+   小節の区切りで切ったときだけ伴奏をそのまま残す。小節の途中で切ったら伴奏は外す（あとで「調整」で付け直せる）。 */
+const trim = { song: null, take: null, s: 0, e: 1, preview: null, drag: null };
+const TRIM_STEP = 0.25;
 function barsOf(t){ return Math.max(1, Math.round(t.len / t.beats)); }
-function trimmedTake(t, s0, e0){
-  const B = t.beats, S = s0 * B, E = e0 * B;
+const onBar = (x, B) => Math.abs(x / B - Math.round(x / B)) < 1e-6;
+function trimmedTake(t, S, E){
+  const B = t.beats, keepBacking = t.backing !== false && !(t.backOffset) && onBar(S, B) && onBar(E, B);
   const notes = t.notes
-    .filter(n => (s0 === 0 ? true : n[1] >= S - 0.5) && n[1] < E)        // 切る位置の直前0.5拍の食いは残す
+    .filter(n => (keepBacking ? (S <= 0 ? true : n[1] >= S - 0.5) : n[1] >= S - 1e-6) && n[1] < E - 1e-6) // 小節の区切りなら直前0.5拍の食いは残す
     .map(([p, st, d]) => [p, +(st - S).toFixed(3), +Math.min(d, E - st).toFixed(3)]);
-  const ps = partsOf(t), parts = [];
+  if (!keepBacking) return Object.assign({}, t, { notes, len: +(E - S).toFixed(3), parts: null, backing: false, backOffset: 0 });
+  const s0 = Math.round(S / B), e0 = Math.round(E / B), ps = partsOf(t), parts = [];
   ps.forEach((x, i) => {
     const from = Math.max(x.startBar, s0), to = Math.min(i + 1 < ps.length ? ps[i + 1].startBar : barsOf(t), e0);
     if (from >= to) return;
@@ -1675,34 +1693,56 @@ function trimmedTake(t, s0, e0){
   return Object.assign({}, t, { notes, len: (e0 - s0) * B, parts: parts.length > 1 ? parts : null,
     prog: first.prog, key: first.key || 0, progStart: first.progStart || 0, rhythm: first.rhythm });
 }
+function trimGeom(){
+  const t = trim.take, c = $('#trimCanvas');
+  const minS = Math.min(0, ...t.notes.map(n => n[1])), from = minS < 0 ? -t.beats : 0, span = t.len - from;
+  return { t, c, from, span, W: c.clientWidth, H: c.clientHeight };
+}
+const posLabel = (x, B) => { const bar = Math.floor(x / B), bt = x - bar * B; return (bar + 1) + '小節 ' + (+(bt + 1).toFixed(2)) + '拍'; };
 function openTrim(song, take){
-  trim.song = song; trim.take = take; trim.s = 0; trim.e = barsOf(take);
-  $('#trimTitle').textContent = (song.title || 'タイトル未定') + ' ／ ' + take.name + '（' + barsOf(take) + '小節）';
-  openSheet('#trimSheet'); paintTrim(); requestAnimationFrame(paintTrim); // 先に表示、幅が決まったら描き直す
+  trim.song = song; trim.take = take;
+  const g = trimGeom(); trim.s = g.from; trim.e = take.len;
+  $('#trimTitle').textContent = (song.title || 'タイトル未定') + ' ／ ' + take.name;
+  openSheet('#trimSheet'); paintTrim(); requestAnimationFrame(paintTrim);
 }
 function paintTrim(){
-  const t = trim.take, bars = barsOf(t);
-  trim.s = clamp(trim.s, 0, bars - 1); trim.e = clamp(trim.e, trim.s + 1, bars);
-  $('#trimSLabel').textContent = (trim.s + 1) + '小節目から';
-  $('#trimELabel').textContent = trim.e + '小節目まで';
-  const c = $('#trimCanvas'); drawRoll(c, t, null);
-  const g = c.getContext('2d'), W = c.clientWidth, H = c.clientHeight;
-  const minS = Math.min(0, ...t.notes.map(n => n[1])), from = minS < 0 ? -t.beats : 0, span = t.len - from;
-  const x = beat => (beat - from) / span * W;
-  g.fillStyle = 'rgba(0,0,0,0.55)';
-  g.fillRect(0, 0, x(trim.s * t.beats), H);
-  g.fillRect(x(trim.e * t.beats), 0, W - x(trim.e * t.beats), H);
+  const { t, c, from, span, W, H } = trimGeom(), B = t.beats;
+  trim.s = clamp(trim.s, from, t.len - TRIM_STEP); trim.e = clamp(trim.e, trim.s + TRIM_STEP, t.len);
+  $('#trimSLabel').textContent = posLabel(trim.s, B);
+  $('#trimELabel').textContent = posLabel(trim.e, B);
+  const keep = t.backing !== false && !(t.backOffset) && onBar(trim.s, B) && onBar(trim.e, B);
+  $('#trimWarn').textContent = keep ? '小節の区切りで切るので、伴奏はそのまま残ります。'
+    : '小節の途中で切るので、伴奏（リズム・コード）は外れます。つなげたあと「調整」で付け直せます。';
+  drawRoll(c, t, null);
+  const g = c.getContext('2d'), x = v => (v - from) / span * W, xs = x(trim.s), xe = x(trim.e);
+  g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, 0, xs, H); g.fillRect(xe, 0, W - xe, H);
+  g.strokeStyle = '#7FC4FF'; g.lineWidth = 2; g.strokeRect(xs + 1, 1, Math.max(2, xe - xs - 2), H - 2);
+  g.fillStyle = '#7FC4FF';
+  [xs, xe].forEach(px => { g.beginPath(); g.roundRect ? g.roundRect(px - 6, H / 2 - 18, 12, 36, 5) : g.rect(px - 6, H / 2 - 18, 12, 36); g.fill(); });
   g.fillStyle = cssVar('--muted'); g.font = '10px ' + cssVar('--mono');
-  for (let k = 0; k < bars; k++) if (bars <= 16 || k % 2 === 0) g.fillText(String(k + 1), x(k * t.beats) + 2, 10);
+  const bars = Math.ceil(t.len / B); for (let k = 0; k < bars; k++) if (bars <= 16 || k % 2 === 0) g.fillText(String(k + 1), x(k * B) + 2, 10);
 }
-[['trimS-', () => trim.s--], ['trimS+', () => trim.s++], ['trimE-', () => trim.e--], ['trimE+', () => trim.e++]].forEach(([id, f]) => {
+// 指で枠のつまみを動かす（近いほうのつまみをつかむ）
+(() => {
+  const c = $('#trimCanvas');
+  const beatAt = ev => { const { from, span, W } = trimGeom(), r = c.getBoundingClientRect(); return from + (ev.clientX - r.left) / W * span; };
+  c.addEventListener('pointerdown', ev => {
+    if (!trim.take) return; ev.preventDefault();
+    const v = beatAt(ev); trim.drag = Math.abs(v - trim.s) <= Math.abs(v - trim.e) ? 's' : 'e';
+    try { c.setPointerCapture(ev.pointerId); } catch (e) {}
+    trim[trim.drag] = Math.round(v / TRIM_STEP) * TRIM_STEP; paintTrim();
+  });
+  c.addEventListener('pointermove', ev => { if (!trim.drag) return; trim[trim.drag] = Math.round(beatAt(ev) / TRIM_STEP) * TRIM_STEP; paintTrim(); });
+  ['pointerup', 'pointercancel'].forEach(tp => c.addEventListener(tp, () => { trim.drag = null; }));
+})();
+[['trimS-', () => trim.s -= TRIM_STEP], ['trimS+', () => trim.s += TRIM_STEP], ['trimE-', () => trim.e -= TRIM_STEP], ['trimE+', () => trim.e += TRIM_STEP]].forEach(([id, f]) => {
   document.getElementById(id).addEventListener('click', () => { f(); paintTrim(); });
 });
 $('#trimAuto').addEventListener('click', () => {
   const t = trim.take; if (!t.notes.length) return;
-  const B = t.beats, first = Math.min(...t.notes.map(n => n[1])), last = Math.max(...t.notes.map(n => n[1] + n[2]));
-  trim.s = Math.max(0, Math.floor((first + 0.5) / B)); trim.e = Math.ceil(last / B - 0.02);
-  paintTrim(); toast(trim.s + 1 + '〜' + trim.e + '小節目を選びました');
+  trim.s = Math.floor(Math.min(...t.notes.map(n => n[1])) / TRIM_STEP) * TRIM_STEP;
+  trim.e = Math.ceil(Math.max(...t.notes.map(n => n[1] + n[2])) / TRIM_STEP) * TRIM_STEP;
+  paintTrim(); toast('弾いている部分だけを選びました');
 });
 $('#trimPlay').addEventListener('click', () => {
   if (trim.preview && play.id === trim.preview.id) { stopPlayback(); return; }
@@ -1714,7 +1754,7 @@ $('#trimSave').addEventListener('click', () => {
   if (!n.notes.length) { toast('この範囲には音がありません'); return; }
   const no = nextMemoNo(); settings.memoNo = no; saveSettings();
   const nt = Object.assign(n, { id: 't' + uid(), name: 'メモ' + no, createdAt: Date.now(), arrangedFrom: t.name, arrangeKind: 'トリミング',
-    arrangeLog: [(trim.s + 1) + '〜' + trim.e + '小節目を残した'] });
+    arrangeLog: [posLabel(trim.s, t.beats) + '〜' + posLabel(trim.e, t.beats) + 'を残した'].concat(n.backing === false && t.backing !== false ? ['伴奏は外した（調整で付け直せます）'] : []) });
   trim.song.takes.unshift(nt); touchSong(trim.song); closeSheets(); renderTakes(); $('#takes').scrollTop = 0;
   toast('メモ' + no + ' に' + t.name + 'のトリミング版を保存しました');
 });
@@ -1735,18 +1775,22 @@ $('#joinDo').addEventListener('click', () => {
   const list = join.ids.map(id => song.takes.find(t => t.id === id)).filter(Boolean);
   if (list.length < 2) { toast('2つ以上選んでください'); return; }
   if (list.some(t => t.beats !== list[0].beats)) { toast('拍子が違うメモはつなげられません'); return; }
-  const base = list[0], notes = [], parts = [];
-  let offBars = 0;
+  const base = list[0], notes = [], parts = [], B = base.beats;
+  const keepBacking = list.every(t => t.backing !== false && !t.backOffset && onBar(t.len, B));
+  let off = 0;
   list.forEach(t => {
-    t.notes.forEach(([p, st, d]) => notes.push([p, +(st + offBars * base.beats).toFixed(3), d]));
-    partsOf(t).forEach(x => parts.push(Object.assign({}, x, { startBar: x.startBar + offBars })));
-    offBars += barsOf(t);
+    t.notes.forEach(([p, st, d]) => notes.push([p, +(st + off).toFixed(3), d]));
+    if (keepBacking) partsOf(t).forEach(x => parts.push(Object.assign({}, x, { startBar: x.startBar + Math.round(off / B) })));
+    off += t.len;
   });
+  const offBars = off / B;
   const no = nextMemoNo(); settings.memoNo = no; saveSettings();
   const names = list.map(t => t.name);
-  const nt = Object.assign({}, base, { id: 't' + uid(), name: 'メモ' + no, notes: notes.sort((a, b) => a[1] - b[1]), len: offBars * base.beats,
-    parts: parts.length > 1 ? parts : null, createdAt: Date.now(), arrangedFrom: names.join('＋'), arrangeKind: '接合',
-    arrangeLog: [names.join(' → ') + 'の順につなげた'].concat(list.some(t => t.bpm !== base.bpm) ? ['テンポは' + base.bpm + 'にそろえた'] : []) });
+  const nt = Object.assign({}, base, { id: 't' + uid(), name: 'メモ' + no, notes: notes.sort((a, b) => a[1] - b[1]), len: +off.toFixed(3),
+    parts: keepBacking && parts.length > 1 ? parts : null, backing: keepBacking ? base.backing : false, backOffset: 0,
+    createdAt: Date.now(), arrangedFrom: names.join('＋'), arrangeKind: '接合',
+    arrangeLog: [names.join(' → ') + 'の順につなげた'].concat(list.some(t => t.bpm !== base.bpm) ? ['テンポは' + base.bpm + 'にそろえた'] : [])
+      .concat(keepBacking ? [] : ['伴奏なし（「調整」で付けられます）']) });
   song.takes.unshift(nt); touchSong(song);
   join.on = false; join.ids = []; paintJoin(); renderTakes(); $('#takes').scrollTop = 0;
   toast('メモ' + no + ' に' + names.join('＋') + 'をつなげて保存しました');
