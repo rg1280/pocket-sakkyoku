@@ -284,8 +284,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="btn btn-metro" id="metroBtn" aria-pressed="false">リズムを鳴らす</button>
         <button class="btn btn-rec" id="recBtn"><span class="dot"></span><span id="recLabel">録音</span></button>
       </div>
-      <div class="seg" id="inputSeg"><button data-v="keys">鍵盤で録る</button><button data-v="hum">鼻歌で録る</button></div>
-      <label class="adj-check" id="humSnapRow" hidden><input type="checkbox" id="humSnap"> <span id="humSnapLabel">鼻歌をキーの音にそろえる</span></label>
+
     </div>
 
     <div class="kb-bar">
@@ -960,12 +959,12 @@ function recStart(opts){
   if (!opts.at) stopPlayback();
   if (!cur()) newSong('');
   // 鼻歌でリズムが止まっているときは、リズムを鳴らさずにすぐ録る（伴奏はあとで「調整」で付けられる）
-  const humFree = settings.recInput === 'hum' && !metro.on && !opts.at;
+  const humFree = false; // 鼻歌録音は廃止
   const fresh = !metro.on && !opts.at && !humFree, t0 = ctx.currentTime + 0.1;
   if (opts.at) metroStart(opts.at, 0);   // 組み立て：前の部分を流し終えた瞬間から録る（カウントなし）
   else if (fresh) metroStart(t0, 1); // 1 bar count-in (no chord during it)
   rec.active = true; rec.notes = []; rec.open.clear();
-  rec.mode = settings.recInput === 'hum' ? 'hum' : 'keys';
+  rec.mode = 'keys'; // 鼻歌録音は廃止
   rec.bpm = settings.bpm; rec.beats = settings.beats; rec.rhythm = settings.rhythm;
   rec.start = opts.at ? opts.at : humFree ? t0 : fresh ? t0 + spb() * settings.beats : nextDownbeat();
   rec.free = humFree;
@@ -1128,19 +1127,9 @@ function humStop(){
   hum.stream = hum.src = hum.an = hum.ctx = null;
   applySilentMode();
 }
-function paintInput(){
-  $('#inputSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (settings.recInput || 'keys') ? 'true' : 'false'));
-  $('#humSnapRow').hidden = settings.recInput !== 'hum';
-  $('#humSnap').checked = settings.humSnap !== false;
-  $('#humSnapLabel').textContent = '鼻歌をキーの音にそろえる（いまはキー' + KEY_LABELS[settings.key || 0] + '）';
-}
-$('#humSnap').addEventListener('change', e => { settings.humSnap = e.target.checked; saveSettings(); });
-$('#inputSeg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b || rec.active) return;
-  settings.recInput = b.dataset.v; saveSettings(); paintInput();
-  if (settings.recInput === 'hum') toast('鼻歌で録ります。リズムや伴奏を鳴らすときはイヤホンを使ってください');
-});
-paintInput();
+// 鼻歌録音は10/9に廃止（ブレ・取りもれが多いため）。録音は常に鍵盤。
+settings.recInput = 'keys';
+function paintInput(){}
 
 /* ---------- 録音のあと：削除か保存か ---------- */
 let pending = null;
