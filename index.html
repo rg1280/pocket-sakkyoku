@@ -285,6 +285,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="btn btn-rec" id="recBtn"><span class="dot"></span><span id="recLabel">録音</span></button>
       </div>
       <div class="seg" id="inputSeg"><button data-v="keys">鍵盤で録る</button><button data-v="hum">鼻歌で録る</button></div>
+      <label class="adj-check" id="humSnapRow" hidden><input type="checkbox" id="humSnap"> <span id="humSnapLabel">鼻歌をキーの音にそろえる</span></label>
     </div>
 
     <div class="kb-bar">
@@ -988,7 +989,7 @@ function recStop(silent){
   $('#recBtn').classList.remove('active'); setStatus('録音');
   $('#beats').classList.remove('rec'); $('#arrRecBar').hidden = true;
   lockTempo(false);
-  if (rec.mode === 'hum') { humStop(); rec.notes = framesToNotes(hum.frames); }
+  if (rec.mode === 'hum') { humStop(); rec.notes = framesToNotes(hum.frames, settings.humSnap !== false ? [0, 2, 4, 5, 7, 9, 11].map(x => ((rec.key || 0) + x) % 12) : null); }
   const b = 60 / rec.bpm, bar = rec.beats;
   let notes = rec.notes
     .map(n => {
@@ -1034,24 +1035,53 @@ function detectPitch(x, sr, gate){
   const best = den ? lag + (a - c) / (2 * den) : lag;               // 放物線で細かく合わせる
   return sr / best;
 }
-function framesToNotes(frames){
-  // 前後2つずつの中央値でならし、半音に丸めた高さが3フレーム続けて変わったら次の音にする
-  const med = frames.map((f, i) => {
-    const w = frames.slice(Math.max(0, i - 2), i + 3).map(g => g.m).filter(v => v != null);
-    return { t: f.t, m: f.m == null || w.length < 3 ? null : w.sort((x, y) => x - y)[w.length >> 1] };
+// 10/9「音がぶれる」→ 人のゆれ（ふらつき・ビブラート・すべり・1オクターブの読み違い・途切れ）入りの試しで比べて決めた：
+//  ① 前後0.12秒の中央値から6半音以上はなれた読み取りは、1オクターブの読み違いとして折りたたむ
+//  ② 前後3つずつ（0.14秒）の中央値でならす
+//  ③ 0.7半音以上はなれた状態が0.08秒続いたら次の音
+//  ④ 0.1秒未満の音は、2半音以内の隣の音にくっつける ⑤ 半音に丸める（指定があればキーの音にそろえる）
+//  ⑥ 同じ高さが短い間をおいて続いたら1つに　→ まちがいが14音中 3.6〜5.7個 から 1.1〜1.6個 に減った
+function framesToNotes(frames, scale){
+  const raw = frames.map(f => f.m);
+  const fixed = raw.map((v, i) => {
+    if (v == null) return null;
+    const w = raw.slice(Math.max(0, i - 6), i + 7).filter(x => x != null).sort((x, y) => x - y), c = w[w.length >> 1];
+    let x = v; while (x - c > 6) x -= 12; while (c - x > 6) x += 12; return x;
+  });
+  const med = fixed.map((v, i) => {
+    const w = fixed.slice(Math.max(0, i - 3), i + 4).filter(x => x != null);
+    return v == null || w.length < 4 ? null : w.sort((x, y) => x - y)[w.length >> 1];
   });
   const notes = []; let cur = null, off = 0, diff = 0;
-  const close = t => { if (cur && t - cur.t0 >= 0.09) { const v = cur.vals.sort((x, y) => x - y); notes.push({ p: Math.round(v[v.length >> 1]), t0: cur.t0, t1: t }); } cur = null; };
-  med.forEach(f => {
-    if (f.m == null) { if (cur && ++off >= 4) close(f.t); return; }   // 0.08秒までの途切れは同じ音として続ける
+  const close = t => { if (cur) { const v = cur.vals.slice().sort((x, y) => x - y); notes.push({ p: v[v.length >> 1], t0: cur.t0, t1: t }); } cur = null; };
+  med.forEach((v, i) => {
+    const t = frames[i].t;
+    if (v == null) { if (cur && ++off >= 4) close(t); return; }   // 0.08秒までの途切れは同じ音として続ける
     off = 0;
-    if (!cur) { cur = { t0: f.t, vals: [f.m] }; diff = 0; return; }
-    const centre = Math.round(cur.vals.slice(-8).sort((x, y) => x - y)[Math.min(cur.vals.length, 8) >> 1]);
-    if (Math.abs(f.m - centre) >= 0.6) { if (++diff >= 3) { close(f.t - 0.04); cur = { t0: f.t - 0.04, vals: [f.m] }; diff = 0; } }
-    else { diff = 0; cur.vals.push(f.m); }
+    if (!cur) { cur = { t0: t, vals: [v] }; diff = 0; return; }
+    const c = cur.vals.slice(-10).sort((x, y) => x - y)[Math.min(cur.vals.length, 10) >> 1];
+    if (Math.abs(v - c) >= 0.7) { if (++diff >= 4) { close(t - 0.06); cur = { t0: t - 0.06, vals: [v] }; diff = 0; } }
+    else { diff = 0; cur.vals.push(v); }
   });
-  if (frames.length) close(frames[frames.length - 1].t);
-  return notes.filter(n => n.p >= 36 && n.p <= 96);
+  if (frames.length) close(frames[frames.length - 1].t + 0.02);
+  let ns = notes.filter(n => n.t1 > n.t0);
+  for (let k = 0; k < ns.length; k++) {
+    const n = ns[k]; if (n.t1 - n.t0 >= 0.1) continue;
+    const pv = ns[k - 1], nx = ns[k + 1], near = x => x && Math.abs(Math.round(x.p) - Math.round(n.p)) <= 2;
+    const tgt = near(pv) && n.t0 - pv.t1 < 0.1 ? pv : near(nx) && nx.t0 - n.t1 < 0.1 ? nx : null;
+    if (tgt) { tgt.t0 = Math.min(tgt.t0, n.t0); tgt.t1 = Math.max(tgt.t1, n.t1); ns.splice(k, 1); k--; }
+  }
+  ns = ns.map(n => {
+    let q = Math.round(n.p);
+    if (scale && !scale.includes(((q % 12) + 12) % 12)) {
+      const c = [q - 1, q + 1].filter(x => scale.includes(((x % 12) + 12) % 12));
+      if (c.length) q = c.sort((x, y) => Math.abs(x - n.p) - Math.abs(y - n.p))[0];
+    }
+    return { p: q, t0: n.t0, t1: n.t1 };
+  });
+  const out = [];
+  ns.forEach(n => { const l = out[out.length - 1]; if (l && l.p === n.p && n.t0 - l.t1 < 0.1) l.t1 = n.t1; else out.push(n); });
+  return out.filter(n => n.p >= 36 && n.p <= 96);
 }
 function micMessage(err){
   const n = err && err.name;
@@ -1084,7 +1114,8 @@ async function humStart(){
     const m = f ? 69 + 12 * Math.log2(f / 440) : null;
     hum.frames.push({ t: ctx.currentTime - 0.023, m });                // バッファの真ん中の時刻
     hum.heard = (hum.heard || 0) + (m == null ? 0 : 1);
-    const shown = m == null ? null : Math.round(m);                     // いま歌っている高さの鍵盤を光らせる
+    const recent = hum.frames.slice(-7).map(x => x.m).filter(x => x != null).sort((x, y) => x - y);
+    const shown = m == null || recent.length < 4 ? null : Math.round(recent[recent.length >> 1]); // いま歌っている高さの鍵盤（ぶれないよう直近の中央値）
     if (shown !== hum.shown) { if (hum.shown != null) keyOn(hum.shown, false); if (shown != null) keyOn(shown, true); hum.shown = shown; }
   }, 20);
 }
@@ -1097,7 +1128,13 @@ function humStop(){
   hum.stream = hum.src = hum.an = hum.ctx = null;
   applySilentMode();
 }
-function paintInput(){ $('#inputSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (settings.recInput || 'keys') ? 'true' : 'false')); }
+function paintInput(){
+  $('#inputSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (settings.recInput || 'keys') ? 'true' : 'false'));
+  $('#humSnapRow').hidden = settings.recInput !== 'hum';
+  $('#humSnap').checked = settings.humSnap !== false;
+  $('#humSnapLabel').textContent = '鼻歌をキーの音にそろえる（いまはキー' + KEY_LABELS[settings.key || 0] + '）';
+}
+$('#humSnap').addEventListener('change', e => { settings.humSnap = e.target.checked; saveSettings(); });
 $('#inputSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || rec.active) return;
   settings.recInput = b.dataset.v; saveSettings(); paintInput();
@@ -1554,7 +1591,7 @@ $('#progSel').addEventListener('change', e => {
   }
   if (isDrill !== wasDrill) { renderTempo(); buildBeats(); if (metro.on) { metroStop(); metroStart(); } }
   saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
-$('#keySel').addEventListener('change', e => { settings.key = +e.target.value; saveSettings(); shownChord = ''; if (!metro.on) showChord(null); });
+$('#keySel').addEventListener('change', e => { settings.key = +e.target.value; saveSettings(); paintInput(); shownChord = ''; if (!metro.on) showChord(null); });
 $('#chordVol').addEventListener('input', e => { settings.chordVol = +e.target.value; saveSettings(); applyVolumes(); });
 $('#bpmDown').addEventListener('click', () => setBpm(settings.bpm - 1));
 $('#bpmUp').addEventListener('click', () => setBpm(settings.bpm + 1));
