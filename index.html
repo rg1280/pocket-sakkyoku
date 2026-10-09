@@ -71,7 +71,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .sync.cloud i{background:var(--ok)} .sync.saving i{background:var(--accent)}
 
 .tabs{display:flex;gap:4px;margin:2px 16px 6px;background:var(--surface-2);padding:3px;border-radius:12px}
-.tabs button{flex:1;padding:6px 0;border-radius:9px;font-size:14px;color:var(--muted);font-weight:600}
+.tabs button{flex:1;padding:6px 0;font-size:13px;border-radius:9px;font-size:14px;color:var(--muted);font-weight:600}
 .tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
 
 .view{flex:1;min-height:0;display:flex;flex-direction:column}
@@ -198,6 +198,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   padding:14px 16px calc(16px + env(safe-area-inset-bottom,0px));max-width:760px;margin:0 auto}
 .sheet h3{font-family:var(--display);font-size:18px;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
 .sheet-body{overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.arr-bar{display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 0}
+.arr-rec{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 16px 0;padding:8px 12px;border-radius:12px;background:var(--rec-soft);color:var(--rec);font-weight:700;font-size:13px}
+.blk-label{flex:1;min-width:0;border:0;background:transparent;font-weight:700;font-size:15px;padding:2px 0}
+.blk-src{font-size:11px;color:var(--muted)}
 .lib-row{background:var(--surface);border-radius:14px;padding:10px 12px;display:grid;gap:6px;box-shadow:var(--shadow)}
 .lib-row.picked{outline:2px solid #7FC4FF}
 .lib-row .lib-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
@@ -245,6 +249,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   <nav class="tabs" role="tablist">
     <button role="tab" id="tabMelody" aria-selected="true">鍵盤</button>
     <button role="tab" id="tabTakes" aria-selected="false">録音一覧</button>
+    <button role="tab" id="tabArr" aria-selected="false">組み立て</button>
     <button role="tab" id="tabMemo" aria-selected="false">歌詞・メモ</button>
   </nav>
 
@@ -279,6 +284,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="btn btn-metro" id="metroBtn" aria-pressed="false">リズムを鳴らす</button>
         <button class="btn btn-rec" id="recBtn"><span class="dot"></span><span id="recLabel">録音</span></button>
       </div>
+      <div class="seg" id="inputSeg"><button data-v="keys">鍵盤で録る</button><button data-v="hum">鼻歌で録る</button></div>
     </div>
 
     <div class="kb-bar">
@@ -295,6 +301,17 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     <div class="takes-head"><span id="takesSong"></span><div style="display:flex;gap:6px"><button class="mini" id="joinStart">つなげる</button><button class="mini" id="takesOtherSongs">ほかの曲</button></div></div>
     <div class="takes-head" id="joinBar" hidden><span id="joinInfo">つなげる順にメモを選んでください</span><div style="display:flex;gap:6px"><button class="mini" id="joinCancel">やめる</button><button class="mini play" id="joinDo">つなげて保存</button></div></div>
     <div class="takes" id="takes"></div>
+  </section>
+
+  <section class="view" id="viewArr" hidden>
+    <div class="takes-head"><span>曲の流れ（上から順に鳴ります）</span><button class="mini play" id="arrAdd">＋ 録音を取り込む</button></div>
+    <div class="arr-bar">
+      <button class="mini play" id="arrPlayAll">▶ 全体を再生</button>
+      <button class="mini" id="arrSave">1つのメモにして保存</button>
+      <button class="mini" id="arrExport">ファイルに保存</button>
+    </div>
+    <div class="arr-rec" id="arrRecBar" hidden><span id="arrRecInfo">録音中</span><button class="mini danger armed" id="arrRecStop">■ 録音を止める</button></div>
+    <div class="takes" id="arrList"></div>
   </section>
 
   <section class="view" id="viewMemo" hidden>
@@ -372,14 +389,15 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
       <button class="mini danger" id="deleteSong" style="justify-self:start">この曲を削除</button></div>
   </div>
 </div>
-<div class="sheet" id="wavSheet" hidden role="dialog" aria-label="音で保存">
-  <h3>音で保存 <button class="close" data-close>閉じる</button></h3>
+<div class="sheet" id="wavSheet" hidden role="dialog" aria-label="保存">
+  <h3>ファイルに保存 <button class="close" data-close>閉じる</button></h3>
   <div class="sheet-body">
     <div class="set-row"><span class="lbl" id="wavTitle"></span>
-      <span class="sub">弾いたメロディーを音のファイル（.wav）にします。iPhoneの「ファイル」に保存したり、AirDrop・LINEで送ったり、SUNOに読み込ませたりできます。</span></div>
+      <div class="seg" id="fmtSeg"><button data-v="wav">音（.wav）</button><button data-v="mid">MIDI（.mid）</button></div>
+      <span class="sub" id="fmtSub"></span></div>
     <div class="set-row"><span class="lbl">伴奏（リズム・コード）</span>
       <div class="seg" id="wavClickSeg"><button data-v="0">入れない</button><button data-v="1">入れる</button></div>
-      <span class="sub">「入れる」にすると、録音したときのリズム（8ビートなど）とコード進行が入ります。SUNOに渡すなら「入れない」がおすすめです。</span></div>
+      <span class="sub" id="wavClickSub">「入れる」にすると、録音したときのリズム（8ビートなど）とコード進行が入ります。SUNOに渡すなら「入れない」がおすすめです。</span></div>
     <button class="new-song" id="wavMake">音のファイルを作る</button>
     <button class="new-song" id="wavShare" hidden>保存・送る</button>
     <span id="wavInfo" style="font-size:12px;color:var(--muted);text-align:center"></span>
@@ -430,6 +448,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     <div class="save-actions"><button class="btn save-del" data-close>やめる</button><button class="btn save-keep" id="trimSave">保存</button></div>
   </div>
 </div>
+<div class="sheet" id="pickSheet" hidden role="dialog" aria-label="録音を取り込む">
+  <h3>録音を取り込む <button class="close" data-close>閉じる</button></h3>
+  <div class="sheet-body">
+    <span class="sub" style="font-size:12px;color:var(--muted)">全部の曲の録音です。「取り込む」を押すと、曲の流れのいちばん下に写しが入ります（元の録音はそのまま残ります）。</span>
+    <div id="pickList" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -445,7 +470,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /* ---------- settings ---------- */
 const settings = Object.assign({
-  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, prog: 'none', key: 0, chordVol: 55, playInSilent: true, timbre: 'sing', currentId: null
+  bpm: 92, beats: 4, octave: 4, lowOct: 3, labels: 'doremi', pianoVol: 80, clickVol: 60, rhythm: 'click', clickOnPlay: true, memoNo: 0, recInput: 'keys', prog: 'none', key: 0, chordVol: 55, playInSilent: true, timbre: 'sing', currentId: null
 }, LS.get('pm.settings', {}));
 const saveSettings = () => LS.set('pm.settings', settings);
 
@@ -928,15 +953,19 @@ function paintBeats(i){
 
 /* ---------- recording ---------- */
 const rec = { active: false, start: 0, notes: [], open: new Map(), armedAt: 0, bpm: 0, beats: 4 };
-function recStart(){
+function recStart(opts){
+  opts = opts || {};
   ensureAudio();
-  stopPlayback();
+  if (!opts.at) stopPlayback();
   if (!cur()) newSong('');
-  const fresh = !metro.on, t0 = ctx.currentTime + 0.1;
-  if (fresh) metroStart(t0, 1); // 1 bar count-in (no chord during it)
+  const fresh = !metro.on && !opts.at, t0 = ctx.currentTime + 0.1;
+  if (opts.at) metroStart(opts.at, 0);   // 組み立て：前の部分を流し終えた瞬間から録る（カウントなし）
+  else if (fresh) metroStart(t0, 1); // 1 bar count-in (no chord during it)
   rec.active = true; rec.notes = []; rec.open.clear();
+  rec.mode = settings.recInput === 'hum' ? 'hum' : 'keys';
   rec.bpm = settings.bpm; rec.beats = settings.beats; rec.rhythm = settings.rhythm;
-  rec.start = fresh ? t0 + spb() * settings.beats : nextDownbeat();
+  rec.start = opts.at ? opts.at : fresh ? t0 + spb() * settings.beats : nextDownbeat();
+  if (rec.mode === 'hum') humStart().catch(() => { toast('マイクを使えませんでした。iPhoneの「設定」でマイクを許可してください'); recStop(); });
   rec.prog = settings.prog; rec.key = settings.key;
   const P = PROGS[rec.prog]; rec.progStart = P ? (fresh ? 0 : ((metro.nextBar % cycleLen(P)) + cycleLen(P)) % cycleLen(P)) : 0;
   rec.armedAt = ctx.currentTime;
@@ -944,6 +973,7 @@ function recStart(){
   active.forEach(a => { a.recNote = openRecNote(a.midi, ctx.currentTime); });
   $('#recBtn').classList.add('active');
   $('#beats').classList.add('rec');
+  $('#arrRecBar').hidden = false;
   lockTempo(true);
 }
 function openRecNote(m, t){
@@ -953,10 +983,11 @@ function recStop(){
   const now = ctx.currentTime;
   rec.active = false;
   $('#recBtn').classList.remove('active'); setStatus('録音');
-  $('#beats').classList.remove('rec');
+  $('#beats').classList.remove('rec'); $('#arrRecBar').hidden = true;
   lockTempo(false);
+  if (rec.mode === 'hum') { humStop(); rec.notes = framesToNotes(hum.frames); }
   const b = 60 / rec.bpm, bar = rec.beats;
-  const notes = rec.notes
+  let notes = rec.notes
     .map(n => {
       const s = (n.t0 - rec.start) / b;
       const e = ((n.t1 != null ? n.t1 : now) - rec.start) / b;
@@ -964,15 +995,93 @@ function recStop(){
     })
     .filter(n => n[1] >= -bar && n[1] < 4000);
   active.forEach(a => { a.recNote = null; });
-  if (!notes.length) { toast('鍵盤が弾かれていないので、保存しませんでした'); setStatus(); return; }
+  if (rec.mode === 'hum') {
+    // 鼻歌は始まりと終わりがゆれやすいので、16分音符の目にそろえる
+    const g = 0.25, snap = x => Math.round(x / g) * g;
+    notes = notes.map(([pp, st, d]) => { const a = snap(st), e = Math.max(a + g, snap(st + d)); return [pp, +a.toFixed(3), +(e - a).toFixed(3)]; })
+      .filter((n, i, arr) => !(i && arr[i - 1][0] === n[0] && arr[i - 1][1] === n[1]));
+  }
+  if (!notes.length) { arrRec.after = null; toast(rec.mode === 'hum' ? '鼻歌が聞き取れなかったので、保存しませんでした' : '鍵盤が弾かれていないので、保存しませんでした'); setStatus(); return; }
   const end = Math.max(...notes.map(n => n[1] + n[2]));
   const len = Math.max(bar, Math.ceil(end / bar - 0.02) * bar);
-  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, prog: rec.prog, key: rec.key, progStart: rec.progStart, notes, len, createdAt: Date.now() } };
+  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', source: rec.mode === 'hum' ? 'hum' : 'keys', bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, prog: rec.prog, key: rec.key, progStart: rec.progStart, notes, len, createdAt: Date.now() } };
   $('#saveInfo').textContent = (len / bar) + '小節 · ' + rec.bpm + 'BPM · ' + (RHYTHMS[rec.rhythm] || 'クリック');
   $('#saveName').textContent = 'メモ' + nextMemoNo();
   openSheet('#saveSheet');
   setStatus();
 }
+/* ---------- 鼻歌で録音 ----------
+   マイクの音から音の高さを読み取り（自己相関＝YIN の簡易版）、0.02秒ごとの高さを音符にまとめる。
+   声そのものは保存しない。残すのは読み取った高さと長さだけ。⚠伴奏を鳴らすならイヤホン必須（マイクが拾う） */
+const hum = { stream: null, src: null, an: null, buf: null, frames: [], timer: null, shown: null };
+function detectPitch(x, sr){
+  let rms = 0; for (let i = 0; i < x.length; i++) rms += x[i] * x[i];
+  if (Math.sqrt(rms / x.length) < 0.012) return null;            // 小さすぎる音は無視
+  const minLag = Math.floor(sr / 1000), maxLag = Math.min(Math.floor(sr / 70), (x.length >> 1) - 2), W = x.length >> 1;
+  const d = new Float32Array(maxLag + 2); let run = 0; d[0] = 1;
+  for (let lag = 1; lag <= maxLag + 1; lag++) {
+    let sum = 0; for (let i = 0; i < W; i++) { const v = x[i] - x[i + lag]; sum += v * v; }
+    run += sum; d[lag] = run ? sum * lag / run : 1;                  // 累積平均で割った差分（YIN）
+  }
+  let lag = -1;
+  for (let l = minLag; l <= maxLag; l++) { if (d[l] < 0.15) { while (l + 1 <= maxLag && d[l + 1] < d[l]) l++; lag = l; break; } }
+  if (lag < 0) return null;
+  const a = d[lag - 1], b = d[lag], c = d[lag + 1], den = a + c - 2 * b;
+  const best = den ? lag + (a - c) / (2 * den) : lag;               // 放物線で細かく合わせる
+  return sr / best;
+}
+function framesToNotes(frames){
+  // 前後2つずつの中央値でならし、半音に丸めた高さが3フレーム続けて変わったら次の音にする
+  const med = frames.map((f, i) => {
+    const w = frames.slice(Math.max(0, i - 2), i + 3).map(g => g.m).filter(v => v != null);
+    return { t: f.t, m: f.m == null || w.length < 3 ? null : w.sort((x, y) => x - y)[w.length >> 1] };
+  });
+  const notes = []; let cur = null, off = 0, diff = 0;
+  const close = t => { if (cur && t - cur.t0 >= 0.09) { const v = cur.vals.sort((x, y) => x - y); notes.push({ p: Math.round(v[v.length >> 1]), t0: cur.t0, t1: t }); } cur = null; };
+  med.forEach(f => {
+    if (f.m == null) { if (cur && ++off >= 2) close(f.t); return; }
+    off = 0;
+    if (!cur) { cur = { t0: f.t, vals: [f.m] }; diff = 0; return; }
+    const centre = Math.round(cur.vals.slice(-8).sort((x, y) => x - y)[Math.min(cur.vals.length, 8) >> 1]);
+    if (Math.abs(f.m - centre) >= 0.6) { if (++diff >= 3) { close(f.t - 0.04); cur = { t0: f.t - 0.04, vals: [f.m] }; diff = 0; } }
+    else { diff = 0; cur.vals.push(f.m); }
+  });
+  if (frames.length) close(frames[frames.length - 1].t);
+  return notes.filter(n => n.p >= 36 && n.p <= 96);
+}
+async function humStart(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nomic');
+  try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
+  hum.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  hum.src = ctx.createMediaStreamSource(hum.stream);
+  hum.an = ctx.createAnalyser(); hum.an.fftSize = 2048; hum.src.connect(hum.an);
+  hum.buf = new Float32Array(hum.an.fftSize); hum.frames = [];
+  hum.timer = setInterval(() => {
+    if (!hum.an || !ctx) return;
+    hum.an.getFloatTimeDomainData(hum.buf);
+    const f = detectPitch(hum.buf, ctx.sampleRate);
+    const m = f ? 69 + 12 * Math.log2(f / 440) : null;
+    hum.frames.push({ t: ctx.currentTime - 0.023, m });                // バッファの真ん中の時刻
+    const shown = m == null ? null : Math.round(m);                     // いま歌っている高さの鍵盤を光らせる
+    if (shown !== hum.shown) { if (hum.shown != null) keyOn(hum.shown, false); if (shown != null) keyOn(shown, true); hum.shown = shown; }
+  }, 20);
+}
+function humStop(){
+  clearInterval(hum.timer); hum.timer = null;
+  if (hum.shown != null) keyOn(hum.shown, false); hum.shown = null;
+  try { hum.src && hum.src.disconnect(); } catch (e) {}
+  if (hum.stream) hum.stream.getTracks().forEach(t => t.stop());
+  hum.stream = hum.src = hum.an = null;
+  applySilentMode();
+}
+function paintInput(){ $('#inputSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (settings.recInput || 'keys') ? 'true' : 'false')); }
+$('#inputSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || rec.active) return;
+  settings.recInput = b.dataset.v; saveSettings(); paintInput();
+  if (settings.recInput === 'hum') toast('鼻歌で録ります。リズムや伴奏を鳴らすときはイヤホンを使ってください');
+});
+paintInput();
+
 /* ---------- 録音のあと：削除か保存か ---------- */
 let pending = null;
 // メモ番号は全曲を通して増やす（削除した番号も再利用しない）
@@ -985,18 +1094,19 @@ function closePending(){
   if (pending && play.id === pending.take.id) stopPlayback();
   pending = null; closeSheets();
 }
-$('#saveDiscard').addEventListener('click', () => { closePending(); toast('削除しました'); });
+$('#saveDiscard').addEventListener('click', () => { arrRec.after = null; closePending(); toast('削除しました'); });
 $('#saveKeep').addEventListener('click', () => {
   if (!pending) return;
   const s = songs[pending.songId] || cur() || newSong('');
   const no = nextMemoNo();
   pending.take.name = 'メモ' + no; settings.memoNo = no; saveSettings();
   s.takes.unshift(pending.take);
+  const placed = arrRec.after ? arrInsertAfter(s, arrRec.after, pending.take) : false; arrRec.after = null;
   touchSong(s);
   closePending();
-  renderTakes();
+  renderTakes(); renderArr();
   $('#takes').scrollTop = 0; // new take is listed first
-  toast('メモ' + no + ' を保存しました。上の「録音一覧」で聴けます');
+  toast('メモ' + no + ' を保存しました。' + (placed ? '曲の流れにも入れました' : '上の「録音一覧」で聴けます'));
 });
 $('#savePlay').addEventListener('click', () => { if (pending) playTake(pending.take); });
 function lockTempo(on){
@@ -1068,6 +1178,7 @@ function stopPlayback(){
   play.voices = []; play.id = null; play.take = null;
   showPlaybackKeys(new Set());
   renderTakes();
+  if (!$('#viewArr').hidden) { renderArr(); $('#arrPlayAll').textContent = '▶ 全体を再生'; }
 }
 
 /* ---------- keyboard ---------- */
@@ -1249,6 +1360,7 @@ function frame(){
 /* ---------- rendering ---------- */
 function setStatus(text){
   const el = $('#recLabel');
+  if (text != null) { const ai = document.getElementById('arrRecInfo'); if (ai) ai.textContent = '● ' + text.replace('停止', '録音中'); }
   if (text == null) text = rec.active ? '停止' : '録音';
   if (el.textContent !== text) el.textContent = text;
 }
@@ -1335,7 +1447,7 @@ function renderTakes(){
       if (play.id === t.id) stopPlayback();
       s.takes = s.takes.filter(x => x.id !== t.id); touchSong(s); renderTakes(); toast('削除しました');
     });
-    const wv = document.createElement('button'); wv.className = 'mini'; wv.textContent = '音で保存';
+    const wv = document.createElement('button'); wv.className = 'mini'; wv.textContent = '保存';
     wv.addEventListener('click', () => openWav(s, t));
     if (join.on) {
       // つなげるモード：選んだ順に番号を付ける
@@ -1363,6 +1475,7 @@ function renderSong(){
   $('#lyrics').value = s ? s.lyrics : '';
   renderTakes();
   if (typeof renderSuno === 'function') try { renderSuno(); } catch (e) {}
+  if (typeof renderArr === 'function' && !$('#viewArr').hidden) try { renderArr(); } catch (e) {}
 }
 function renderSongList(){
   const box = $('#songList'); box.innerHTML = '';
@@ -1388,7 +1501,7 @@ function renderSettings(){
 let toastT = null;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
 function openSheet(id){ $('#scrim').hidden = false; $(id).hidden = false; }
-function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; $('#adjSheet').hidden = true; $('#trimSheet').hidden = true; $('#moveSheet').hidden = true; pending = null; if (typeof trim !== 'undefined' && trim.preview && play.id === trim.preview.id) stopPlayback(); if (adj.preview && play.id === adj.preview.id) stopPlayback(); }
+function closeSheets(){ $('#scrim').hidden = true; $('#songsSheet').hidden = true; $('#settingsSheet').hidden = true; $('#wavSheet').hidden = true; $('#saveSheet').hidden = true; $('#adjSheet').hidden = true; $('#trimSheet').hidden = true; $('#moveSheet').hidden = true; $('#pickSheet').hidden = true; pending = null; if (typeof trim !== 'undefined' && trim.preview && play.id === trim.preview.id) stopPlayback(); if (adj.preview && play.id === adj.preview.id) stopPlayback(); }
 let lock = null;
 async function wakeLock(on){
   try {
@@ -1445,15 +1558,17 @@ $('#octDown').addEventListener('click', () => { settings.lowOct = clamp(settings
 $('#octUp').addEventListener('click', () => { settings.lowOct = clamp(settings.lowOct + 1, 1, 5); saveSettings(); buildKeyboard(); });
 
 function tab(which){
-  [['melody', '#tabMelody', '#viewMelody'], ['takes', '#tabTakes', '#viewTakes'], ['memo', '#tabMemo', '#viewMemo']].forEach(([k, t, v]) => {
+  [['melody', '#tabMelody', '#viewMelody'], ['takes', '#tabTakes', '#viewTakes'], ['arr', '#tabArr', '#viewArr'], ['memo', '#tabMemo', '#viewMemo']].forEach(([k, t, v]) => {
     $(t).setAttribute('aria-selected', k === which ? 'true' : 'false'); $(v).hidden = k !== which;
   });
   if (which === 'melody') requestAnimationFrame(buildKeyboard);
   if (which === 'takes') requestAnimationFrame(renderTakes);
+  if (which === 'arr') requestAnimationFrame(renderArr);
 }
 $('#tabMelody').addEventListener('click', () => tab('melody'));
 $('#tabTakes').addEventListener('click', () => tab('takes'));
 $('#tabMemo').addEventListener('click', () => tab('memo'));
+$('#tabArr').addEventListener('click', () => tab('arr'));
 $('#takesOtherSongs').addEventListener('click', () => { renderSongList(); openSheet('#songsSheet'); });
 
 let textT = null;
@@ -1605,21 +1720,30 @@ $('#importFile').addEventListener('change', async e => {
 });
 
 /* ---------- 音で保存（.wav） ---------- */
-const wav = { song: null, take: null, file: null, withClick: false };
+const wav = { song: null, take: null, file: null, withClick: false, fmt: 'wav' };
 function openWav(song, take){
   wav.song = song; wav.take = take; wav.file = null;
   $('#wavTitle').textContent = (song.title || 'タイトル未定') + ' ／ ' + take.name;
   $('#wavShare').hidden = true; $('#wavMake').hidden = false; $('#wavMake').disabled = false;
-  $('#wavMake').textContent = '音のファイルを作る'; $('#wavInfo').textContent = '';
+  $('#wavMake').textContent = 'ファイルを作る'; $('#wavInfo').textContent = '';
   paintWavSeg(); openSheet('#wavSheet');
 }
 function paintWavSeg(){
   $('#wavClickSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (wav.withClick ? '1' : '0') ? 'true' : 'false'));
+  $('#fmtSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === wav.fmt ? 'true' : 'false'));
+  $('#fmtSub').textContent = wav.fmt === 'mid'
+    ? '音の高さと長さのデータ（MIDI）です。GarageBandや作曲ソフトに読み込めます。メロディーとコードは別々のトラックになります。'
+    : '音のファイルです。iPhoneの「ファイル」に保存したり、AirDrop・LINEで送ったり、SUNOに読み込ませたりできます。';
+  $('#wavClickSub').textContent = wav.fmt === 'mid'
+    ? '「入れる」にすると、コード進行の和音が2つ目のトラックに入ります（ドラムは入りません）。'
+    : '「入れる」にすると、録音したときのリズム（8ビートなど）とコード進行が入ります。SUNOに渡すなら「入れない」がおすすめです。';
 }
+function resetWavFile(){ wav.file = null; $('#wavShare').hidden = true; $('#wavMake').hidden = false; $('#wavMake').disabled = false; $('#wavMake').textContent = 'ファイルを作る'; $('#wavInfo').textContent = ''; }
+$('#fmtSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; wav.fmt = b.dataset.v; paintWavSeg(); resetWavFile(); });
 $('#wavClickSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   wav.withClick = b.dataset.v === '1'; paintWavSeg();
-  if (wav.file) { wav.file = null; $('#wavShare').hidden = true; $('#wavMake').hidden = false; $('#wavMake').disabled = false; $('#wavMake').textContent = '音のファイルを作る'; $('#wavInfo').textContent = ''; }
+  if (wav.file) resetWavFile();
 });
 async function renderWav(take, withClick){
   const sr = 44100, b = 60 / take.bpm, bar = take.beats;
@@ -1653,15 +1777,21 @@ async function renderWav(take, withClick){
 $('#wavMake').addEventListener('click', async () => {
   const btn = $('#wavMake'); btn.disabled = true; btn.textContent = '作っています…';
   try {
-    const { blob, secs } = await renderWav(wav.take, wav.withClick);
     const clean = x => (x || '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
-    const name = [clean(wav.song.title) || 'メロディー', clean(wav.take.name), wav.take.bpm + 'bpm'].join('_') + (wav.withClick ? '_' + (wav.take.rhythm || 'click') : '') + '.wav';
-    wav.file = new File([blob], name, { type: 'audio/wav' });
+    const base = [clean(wav.song.title) || 'メロディー', clean(wav.take.name), wav.take.bpm + 'bpm'].join('_') + (wav.withClick ? '_' + (wav.take.rhythm || 'click') : '');
+    if (wav.fmt === 'mid') {
+      const blob = makeMidi(wav.take, wav.withClick), name = base + '.mid';
+      wav.file = new File([blob], name, { type: 'audio/midi' });
+      $('#wavInfo').textContent = name + '（' + Math.max(1, Math.round(blob.size / 1024)) + 'KB）';
+    } else {
+      const { blob, secs } = await renderWav(wav.take, wav.withClick), name = base + '.wav';
+      wav.file = new File([blob], name, { type: 'audio/wav' });
+      $('#wavInfo').textContent = name + '（' + Math.round(secs) + '秒・' + (blob.size / 1048576).toFixed(1) + 'MB）';
+    }
     btn.hidden = true; $('#wavShare').hidden = false;
-    $('#wavInfo').textContent = name + '（' + Math.round(secs) + '秒・' + (blob.size / 1048576).toFixed(1) + 'MB）';
   } catch (e) {
-    btn.disabled = false; btn.textContent = '音のファイルを作る';
-    toast('音のファイルを作れませんでした');
+    btn.disabled = false; btn.textContent = 'ファイルを作る';
+    toast('ファイルを作れませんでした');
   }
 });
 // 共有は「押した直後」でないとiPhoneが拒むので、作るボタンと分けている
@@ -1674,6 +1804,48 @@ $('#wavShare').addEventListener('click', async () => {
   } catch (e) { if (!e || e.name !== 'AbortError') toast('保存できませんでした'); }
 });
 
+
+/* ---------- MIDI（.mid）を作る ----------
+   形式1・分解能480。トラック0＝テンポと拍子、トラック1＝メロディー、トラック2＝コード（伴奏ありのとき）。
+   6/8 は1拍＝8分音符なので、4分音符に直して書く。弱起（小節より前の音）がある場合は1小節ずらして0から始める。 */
+function makeMidi(take, withBack){
+  const PPQ = 480, q = take.beats === 6 ? 0.5 : 1;            // 1拍が4分音符いくつぶんか
+  const minS = Math.min(0, ...take.notes.map(n => n[1]));
+  const shift = minS < 0 ? take.beats : 0;
+  const tick = x => Math.max(0, Math.round((x + shift) * q * PPQ));
+  const u32 = n => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  const vlq = n => { const o = [n & 0x7f]; while ((n >>>= 7)) o.unshift((n & 0x7f) | 0x80); return o; };
+  const track = evs => {
+    evs.sort((a, b) => a.t - b.t || a.o - b.o);
+    const bytes = []; let last = 0;
+    evs.forEach(e => { bytes.push(...vlq(e.t - last), ...e.d); last = e.t; });
+    bytes.push(0, 0xff, 0x2f, 0);
+    return [0x4d, 0x54, 0x72, 0x6b, ...u32(bytes.length), ...bytes];
+  };
+  const text = (type, str) => { const b = Array.from(new TextEncoder().encode(str)); return [0xff, type, ...vlq(b.length), ...b]; };
+  const us = Math.round(60000000 / (take.bpm * q));
+  const num = take.beats, den = take.beats === 6 ? 3 : 2;   // 分母は2の何乗か（4分＝2、8分＝3）
+  const t0 = [{ t: 0, o: 0, d: [0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255] },
+              { t: 0, o: 0, d: [0xff, 0x58, 4, num, den, 24, 8] }];
+  const mel = [{ t: 0, o: 0, d: text(3, 'メロディー') }, { t: 0, o: 0, d: [0xc0, 0] }];
+  take.notes.forEach(([p, st, d]) => {
+    const a = tick(st), b = Math.max(a + 1, tick(st + d));
+    mel.push({ t: a, o: 1, d: [0x90, clamp(p, 0, 127), 96] }, { t: b, o: 0, d: [0x80, clamp(p, 0, 127), 0] });
+  });
+  const tracks = [track(t0), track(mel)];
+  if (withBack && take.backing !== false) {
+    const ch = [{ t: 0, o: 0, d: text(3, 'コード') }, { t: 0, o: 0, d: [0xc1, 0] }];
+    const bo = take.backOffset || 0, bar = take.beats;
+    for (let k = 0; bo + k * bar < take.len; k++) {
+      const pt = partAt(take, k), c = chordAt(pt.prog, pt.progStart || 0, k - pt.startBar); if (!c) continue;
+      const pcs = chordPcs(pt.key || 0, c), a = tick(bo + k * bar), b = tick(Math.min(take.len, bo + (k + 1) * bar)) - 1;
+      [...pcs.map(pc => into(pc, 55)), into(pcs[0], 45)].forEach(m => ch.push({ t: a, o: 1, d: [0x91, m, 72] }, { t: b, o: 0, d: [0x81, m, 0] }));
+    }
+    if (ch.length > 2) tracks.push(track(ch));
+  }
+  const head = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, tracks.length, (PPQ >> 8) & 255, PPQ & 255];
+  return new Blob([new Uint8Array([...head, ...tracks.flat()])], { type: 'audio/midi' });
+}
 
 /* ---------- 調整（テンポ・リズム・コード・キー） ---------- */
 const adj = { song: null, take: null, bpm: 100, rhythm: 'click', prog: 'none', key: 0, preview: null, off: 0 };
@@ -1834,9 +2006,10 @@ function paintJoin(){
 }
 $('#joinStart').addEventListener('click', () => { join.on = !join.on; join.ids = []; paintJoin(); renderTakes(); });
 $('#joinCancel').addEventListener('click', () => { join.on = false; join.ids = []; paintJoin(); renderTakes(); });
-function joinTakes(song, list){
-  if (list.length < 2) { toast('2つ以上選んでください'); return false; }
-  if (list.some(t => t.beats !== list[0].beats)) { toast('拍子が違うメモはつなげられません'); return false; }
+// 選んだ順につなげた1つのメモを組み立てる（保存はしない）。組み立てページの再生にも使う
+function buildJoined(list){
+  if (!list.length) return { err: '録音がありません' };
+  if (list.some(t => t.beats !== list[0].beats)) return { err: '拍子が違う録音はつなげられません' };
   const base = list[0], notes = [], parts = [], B = base.beats;
   const keepBacking = list.every(t => t.backing !== false && !t.backOffset && onBar(t.len, B));
   let off = 0;
@@ -1845,13 +2018,18 @@ function joinTakes(song, list){
     if (keepBacking) partsOf(t).forEach(x => parts.push(Object.assign({}, x, { startBar: x.startBar + Math.round(off / B) })));
     off += t.len;
   });
+  const take = Object.assign({}, base, { notes: notes.sort((a, b) => a[1] - b[1]), len: +off.toFixed(3),
+    parts: keepBacking && parts.length > 1 ? parts : null, backing: keepBacking ? base.backing : false, backOffset: 0 });
+  return { take, keepBacking, tempoChanged: list.some(t => t.bpm !== base.bpm) };
+}
+function joinTakes(song, list){
+  if (list.length < 2) { toast('2つ以上選んでください'); return false; }
+  const r = buildJoined(list); if (r.err) { toast(r.err); return false; }
   const no = nextMemoNo(); settings.memoNo = no; saveSettings();
   const names = list.map(t => t.name);
-  const nt = Object.assign({}, base, { id: 't' + uid(), name: 'メモ' + no, notes: notes.sort((a, b) => a[1] - b[1]), len: +off.toFixed(3),
-    parts: keepBacking && parts.length > 1 ? parts : null, backing: keepBacking ? base.backing : false, backOffset: 0,
-    createdAt: Date.now(), arrangedFrom: names.join('＋'), arrangeKind: '接合',
-    arrangeLog: [names.join(' → ') + 'の順につなげた'].concat(list.some(t => t.bpm !== base.bpm) ? ['テンポは' + base.bpm + 'にそろえた'] : [])
-      .concat(keepBacking ? [] : ['伴奏なし（「調整」で付けられます）']) });
+  const nt = Object.assign(r.take, { id: 't' + uid(), name: 'メモ' + no, createdAt: Date.now(), arrangedFrom: names.join('＋'), arrangeKind: '接合',
+    arrangeLog: [names.join(' → ') + 'の順につなげた'].concat(r.tempoChanged ? ['テンポは' + list[0].bpm + 'にそろえた'] : [])
+      .concat(r.keepBacking ? [] : ['伴奏なし（「調整」で付けられます）']) });
   song.takes.unshift(nt); touchSong(song);
   toast('メモ' + no + ' に' + names.join('＋') + 'をつなげて保存しました');
   return true;
@@ -1861,6 +2039,117 @@ $('#joinDo').addEventListener('click', () => {
   const list = join.ids.map(id => song.takes.find(t => t.id === id)).filter(Boolean);
   if (!joinTakes(song, list)) return;
   join.on = false; join.ids = []; paintJoin(); renderTakes(); $('#takes').scrollTop = 0;
+});
+
+/* ---------- 組み立て（曲の流れを作る作業ページ） ----------
+   10/9 本人指示：サビが先に浮かび、あとからAメロ・Bメロを足していく順が多いので、
+   録音の写しを並べ・複製し・並べ替え、前の部分を聴きながら次の部分を録れるページ。
+   曲ごとに song.arrange = [{ id, label, take（録音の写し） }] として保存する。元の録音には影響しない。 */
+const arrRec = { after: null };
+const arrBlocks = song => (song.arrange = song.arrange || []);
+const arrCopy = t => JSON.parse(JSON.stringify(t));
+function arrInsertAfter(song, blockId, take){
+  const list = arrBlocks(song), i = list.findIndex(x => x.id === blockId);
+  if (i < 0) return false;
+  list.splice(i + 1, 0, { id: 'b' + uid(), label: '', take: arrCopy(take) }); return true;
+}
+function arrJoined(song){
+  const list = arrBlocks(song); if (!list.length) return null;
+  const r = buildJoined(list.map(x => x.take)); if (r.err) { toast(r.err); return null; }
+  return Object.assign(r.take, { id: 'arr_' + song.id, name: (song.title || 'タイトル未定') + '（曲の流れ）' });
+}
+function renderArr(){
+  const box = $('#arrList'); if (!box) return; box.innerHTML = '';
+  const song = cur(); if (!song) return;
+  const list = arrBlocks(song);
+  if (!list.length) {
+    const p = document.createElement('div'); p.className = 'empty';
+    p.textContent = '「＋ 録音を取り込む」で、サビやAメロの録音を並べます。並べた部分は複製・並べ替えができ、各部分の「この後ろに録る」で、その部分を聴いてからすぐ続きを録れます。';
+    box.appendChild(p); return;
+  }
+  list.forEach((blk, i) => {
+    const t = blk.take;
+    const el = document.createElement('div'); el.className = 'take' + (play.id === 'blk_' + blk.id ? ' playing' : '');
+    const head = document.createElement('div'); head.className = 'take-head';
+    const name = document.createElement('input'); name.className = 'blk-label'; name.value = blk.label || ''; name.id = 'blk-' + blk.id;
+    name.placeholder = (i + 1) + '. 部分の名前（Aメロ・サビなど）'; name.setAttribute('aria-label', '部分の名前');
+    name.addEventListener('change', () => { blk.label = name.value.trim(); touchSong(song); });
+    const meta = document.createElement('span'); meta.className = 'take-meta';
+    meta.textContent = (Math.abs(t.len / t.beats - Math.round(t.len / t.beats)) < 0.01 ? Math.round(t.len / t.beats) : (t.len / t.beats).toFixed(1)) + '小節 · ' + t.bpm + 'BPM';
+    const src = document.createElement('span'); src.className = 'blk-src'; src.textContent = '元：' + t.name + (t.source === 'hum' ? '（鼻歌）' : '');
+    head.append(name, meta, src);
+    const c = document.createElement('canvas');
+    const btns = document.createElement('div'); btns.className = 'take-btns';
+    const mk = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'mini' + (cls ? ' ' + cls : ''); b.textContent = label; b.addEventListener('click', fn); return b; };
+    const pb = mk(play.id === 'blk_' + blk.id ? '■' : '▶', 'play', () => { playTake(Object.assign(arrCopy(t), { id: 'blk_' + blk.id })); renderArr(); });
+    const dup = mk('複製', '', () => { list.splice(i + 1, 0, { id: 'b' + uid(), label: blk.label, take: arrCopy(t) }); touchSong(song); renderArr(); toast('すぐ下に複製しました'); });
+    const up = mk('↑', '', () => { if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); touchSong(song); renderArr(); } });
+    const down = mk('↓', '', () => { if (i < list.length - 1) { list.splice(i + 1, 0, list.splice(i, 1)[0]); touchSong(song); renderArr(); } });
+    const after = mk('この後ろに録る', 'trim', () => recAfterBlock(song, blk));
+    const del = mk('外す', 'danger', () => { list.splice(i, 1); touchSong(song); renderArr(); toast('曲の流れから外しました（元の録音は残っています）'); });
+    del.style.marginLeft = 'auto';
+    btns.append(pb, dup, up, down, after, del);
+    el.append(head, c, btns); box.appendChild(el);
+    requestAnimationFrame(() => drawRoll(c, t, null));
+  });
+}
+// その部分を流し、終わった瞬間から同じテンポで録音を始める（鍵盤／鼻歌は「鍵盤」タブの切り替えに従う）
+function recAfterBlock(song, blk){
+  if (rec.active) return;
+  ensureAudio(); stopPlayback(); if (metro.on) metroStop();
+  const t = blk.take;
+  settings.bpm = t.bpm; settings.beats = t.beats; if (t.backing !== false && t.rhythm) settings.rhythm = t.rhythm;
+  saveSettings(); renderTempo(); buildBeats();
+  playTake(Object.assign(arrCopy(t), { id: 'blk_' + blk.id }));
+  const end = play.t0 + t.len * (60 / t.bpm);
+  arrRec.after = blk.id;
+  recStart({ at: end });
+  setStatus('「' + (blk.label || t.name) + '」のあとから録音します');
+  toast('この部分を流したあと、そのまま録音が始まります');
+}
+$('#arrRecStop').addEventListener('click', () => { if (rec.active) recStop(); });
+$('#arrPlayAll').addEventListener('click', () => {
+  const song = cur(); if (!song) return;
+  if (play.id === 'arr_' + song.id) { stopPlayback(); $('#arrPlayAll').textContent = '▶ 全体を再生'; return; }
+  const j = arrJoined(song); if (!j) { if (!arrBlocks(song).length) toast('まだ何も並んでいません'); return; }
+  playTake(j); $('#arrPlayAll').textContent = '■ 止める';
+});
+$('#arrSave').addEventListener('click', () => {
+  const song = cur(); if (!song) return;
+  const list = arrBlocks(song).map(x => Object.assign(arrCopy(x.take), { name: x.label || x.take.name }));
+  if (list.length < 2) { toast('2つ以上並べてください'); return; }
+  if (joinTakes(song, list)) renderTakes();
+});
+$('#arrExport').addEventListener('click', () => {
+  const song = cur(); if (!song) return;
+  const j = arrJoined(song); if (!j) { toast('まだ何も並んでいません'); return; }
+  wav.withClick = false; openWav(song, j);
+});
+// 録音を取り込む（全部の曲から）
+$('#arrAdd').addEventListener('click', () => {
+  const box = $('#pickList'); box.innerHTML = '';
+  const rows = [];
+  Object.values(songs).forEach(so => so.takes.forEach(t => rows.push({ so, t })));
+  rows.sort((a, b) => (b.t.createdAt || 0) - (a.t.createdAt || 0));
+  if (!rows.length) box.textContent = 'まだ録音がありません';
+  rows.forEach(({ so, t }) => {
+    const el = document.createElement('div'); el.className = 'lib-row';
+    const top = document.createElement('div'); top.className = 'lib-top';
+    const nm = document.createElement('b'); nm.textContent = t.name + (t.source === 'hum' ? '（鼻歌）' : '');
+    const meta = document.createElement('span'); meta.textContent = (so.title || 'タイトル未定') + ' · ' + fmtDate(t.createdAt) + ' · ' + Math.round(t.len / t.beats) + '小節';
+    top.append(nm, meta);
+    const btns = document.createElement('div'); btns.className = 'take-btns';
+    const pb = document.createElement('button'); pb.className = 'mini'; pb.textContent = '▶ 聴く';
+    pb.addEventListener('click', () => playTake(t));
+    const add = document.createElement('button'); add.className = 'mini play'; add.textContent = '取り込む';
+    add.addEventListener('click', () => {
+      const song = cur() || newSong('');
+      arrBlocks(song).push({ id: 'b' + uid(), label: '', take: arrCopy(t) }); touchSong(song);
+      add.textContent = '取り込みました'; add.disabled = true; renderArr();
+    });
+    btns.append(pb, add); el.append(top, btns); box.appendChild(el);
+  });
+  openSheet('#pickSheet');
 });
 
 /* ---------- 曲の一覧の「録音」タブ：全部の曲の録音から選んでつなげる ---------- */
