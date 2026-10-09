@@ -958,16 +958,19 @@ function recStart(opts){
   ensureAudio();
   if (!opts.at) stopPlayback();
   if (!cur()) newSong('');
-  const fresh = !metro.on && !opts.at, t0 = ctx.currentTime + 0.1;
+  // 鼻歌でリズムが止まっているときは、リズムを鳴らさずにすぐ録る（伴奏はあとで「調整」で付けられる）
+  const humFree = settings.recInput === 'hum' && !metro.on && !opts.at;
+  const fresh = !metro.on && !opts.at && !humFree, t0 = ctx.currentTime + 0.1;
   if (opts.at) metroStart(opts.at, 0);   // 組み立て：前の部分を流し終えた瞬間から録る（カウントなし）
   else if (fresh) metroStart(t0, 1); // 1 bar count-in (no chord during it)
   rec.active = true; rec.notes = []; rec.open.clear();
   rec.mode = settings.recInput === 'hum' ? 'hum' : 'keys';
   rec.bpm = settings.bpm; rec.beats = settings.beats; rec.rhythm = settings.rhythm;
-  rec.start = opts.at ? opts.at : fresh ? t0 + spb() * settings.beats : nextDownbeat();
-  if (rec.mode === 'hum') humStart().catch(() => { toast('マイクを使えませんでした。iPhoneの「設定」でマイクを許可してください'); recStop(); });
+  rec.start = opts.at ? opts.at : humFree ? t0 : fresh ? t0 + spb() * settings.beats : nextDownbeat();
+  rec.free = humFree;
+  if (rec.mode === 'hum') humStart().catch(err => { recStop(true); toast(micMessage(err)); });
   rec.prog = settings.prog; rec.key = settings.key;
-  const P = PROGS[rec.prog]; rec.progStart = P ? (fresh ? 0 : ((metro.nextBar % cycleLen(P)) + cycleLen(P)) % cycleLen(P)) : 0;
+  const P = PROGS[rec.prog]; rec.progStart = P ? (fresh || humFree ? 0 : ((metro.nextBar % cycleLen(P)) + cycleLen(P)) % cycleLen(P)) : 0;
   rec.armedAt = ctx.currentTime;
   // notes held already while arming count from now
   active.forEach(a => { a.recNote = openRecNote(a.midi, ctx.currentTime); });
@@ -979,7 +982,7 @@ function recStart(opts){
 function openRecNote(m, t){
   const n = { p: m, t0: t, t1: null }; rec.notes.push(n); return n;
 }
-function recStop(){
+function recStop(silent){
   const now = ctx.currentTime;
   rec.active = false;
   $('#recBtn').classList.remove('active'); setStatus('録音');
@@ -1001,10 +1004,10 @@ function recStop(){
     notes = notes.map(([pp, st, d]) => { const a = snap(st), e = Math.max(a + g, snap(st + d)); return [pp, +a.toFixed(3), +(e - a).toFixed(3)]; })
       .filter((n, i, arr) => !(i && arr[i - 1][0] === n[0] && arr[i - 1][1] === n[1]));
   }
-  if (!notes.length) { arrRec.after = null; toast(rec.mode === 'hum' ? '鼻歌が聞き取れなかったので、保存しませんでした' : '鍵盤が弾かれていないので、保存しませんでした'); setStatus(); return; }
+  if (!notes.length) { arrRec.after = null; if (!silent) toast(rec.mode === 'hum' ? '鼻歌が聞き取れなかったので、保存しませんでした（声が小さいときは、マイクに近づいて「ンー」とはっきり歌ってください）' : '鍵盤が弾かれていないので、保存しませんでした'); setStatus(); return; }
   const end = Math.max(...notes.map(n => n[1] + n[2]));
   const len = Math.max(bar, Math.ceil(end / bar - 0.02) * bar);
-  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', source: rec.mode === 'hum' ? 'hum' : 'keys', bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, prog: rec.prog, key: rec.key, progStart: rec.progStart, notes, len, createdAt: Date.now() } };
+  pending = { songId: cur().id, take: { id: 't' + uid(), name: '', source: rec.mode === 'hum' ? 'hum' : 'keys', backing: rec.free ? false : undefined, bpm: rec.bpm, beats: rec.beats, rhythm: rec.rhythm, prog: rec.prog, key: rec.key, progStart: rec.progStart, notes, len, createdAt: Date.now() } };
   $('#saveInfo').textContent = (len / bar) + '小節 · ' + rec.bpm + 'BPM · ' + (RHYTHMS[rec.rhythm] || 'クリック');
   $('#saveName').textContent = 'メモ' + nextMemoNo();
   openSheet('#saveSheet');
@@ -1049,19 +1052,28 @@ function framesToNotes(frames){
   if (frames.length) close(frames[frames.length - 1].t);
   return notes.filter(n => n.p >= 36 && n.p <= 96);
 }
+function micMessage(err){
+  const n = err && err.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'マイクが許可されていません。iPhoneの「設定」→「アプリ」→「Safari」→「マイク」を「確認」か「許可」にして、作曲帳を開き直してください';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'マイクが見つかりませんでした';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'ほかのアプリがマイクを使っています。通話や録音のアプリを閉じてから、もう一度試してください';
+  if (err && err.message === 'nomic') return 'この画面ではマイクを使えません。ホーム画面の作曲帳か、Safariで開いてください';
+  return 'マイクを使えませんでした（' + (n || (err && err.message) || '不明') + '）';
+}
 async function humStart(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nomic');
   try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
   hum.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   hum.src = ctx.createMediaStreamSource(hum.stream);
   hum.an = ctx.createAnalyser(); hum.an.fftSize = 2048; hum.src.connect(hum.an);
-  hum.buf = new Float32Array(hum.an.fftSize); hum.frames = [];
+  hum.buf = new Float32Array(hum.an.fftSize); hum.frames = []; hum.heard = 0;
   hum.timer = setInterval(() => {
     if (!hum.an || !ctx) return;
     hum.an.getFloatTimeDomainData(hum.buf);
     const f = detectPitch(hum.buf, ctx.sampleRate);
     const m = f ? 69 + 12 * Math.log2(f / 440) : null;
     hum.frames.push({ t: ctx.currentTime - 0.023, m });                // バッファの真ん中の時刻
+    hum.heard = (hum.heard || 0) + (m == null ? 0 : 1);
     const shown = m == null ? null : Math.round(m);                     // いま歌っている高さの鍵盤を光らせる
     if (shown !== hum.shown) { if (hum.shown != null) keyOn(hum.shown, false); if (shown != null) keyOn(shown, true); hum.shown = shown; }
   }, 20);
@@ -1343,7 +1355,8 @@ function frame(){
     if (rec.active) {
       const b = (now - rec.start) / (60 / rec.bpm);
       if (b < 0) setStatus(b < -rec.beats ? '次の小節から録音…' : 'カウント ' + Math.ceil(-b));
-      else setStatus('停止（' + (Math.floor(b / rec.beats) + 1) + '小節目）');
+      else if (rec.free) setStatus('停止（' + Math.floor(now - rec.start) + '秒' + (hum.stream ? (hum.shown != null ? '・聞こえています' : '・歌ってください') : '・マイク準備中') + '）');
+      else setStatus('停止（' + (Math.floor(b / rec.beats) + 1) + '小節目' + (rec.mode === 'hum' && hum.stream ? (hum.shown != null ? '・聞こえています' : '') : '') + '）');
     }
     if (pending) { const l = play.id === pending.take.id ? '■ 止める' : '▶ 聴いてみる'; if ($('#savePlay').textContent !== l) $('#savePlay').textContent = l; }
     if (play.id) {
