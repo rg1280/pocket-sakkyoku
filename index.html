@@ -1563,7 +1563,7 @@ function tab(which){
   });
   if (which === 'melody') requestAnimationFrame(buildKeyboard);
   if (which === 'takes') requestAnimationFrame(renderTakes);
-  if (which === 'arr') requestAnimationFrame(renderArr);
+  if (which === 'arr') { renderArr(); requestAnimationFrame(renderArr); }
 }
 $('#tabMelody').addEventListener('click', () => tab('melody'));
 $('#tabTakes').addEventListener('click', () => tab('takes'));
@@ -2056,7 +2056,7 @@ function arrInsertAfter(song, blockId, take){
 function arrJoined(song){
   const list = arrBlocks(song); if (!list.length) return null;
   const r = buildJoined(list.map(x => x.take)); if (r.err) { toast(r.err); return null; }
-  return Object.assign(r.take, { id: 'arr_' + song.id, name: (song.title || 'タイトル未定') + '（曲の流れ）' });
+  return Object.assign(r.take, { id: 'arr_' + song.id, name: '曲の流れ' });
 }
 function renderArr(){
   const box = $('#arrList'); if (!box) return; box.innerHTML = '';
