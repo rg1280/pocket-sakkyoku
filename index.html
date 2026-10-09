@@ -1016,7 +1016,7 @@ function recStop(silent){
 /* ---------- 鼻歌で録音 ----------
    マイクの音から音の高さを読み取り（自己相関＝YIN の簡易版）、0.02秒ごとの高さを音符にまとめる。
    声そのものは保存しない。残すのは読み取った高さと長さだけ。⚠伴奏を鳴らすならイヤホン必須（マイクが拾う） */
-const hum = { stream: null, src: null, an: null, buf: null, frames: [], timer: null, shown: null };
+const hum = { stream: null, ctx: null, src: null, an: null, buf: null, frames: [], timer: null, shown: null };
 function detectPitch(x, sr){
   let rms = 0; for (let i = 0; i < x.length; i++) rms += x[i] * x[i];
   if (Math.sqrt(rms / x.length) < 0.012) return null;            // 小さすぎる音は無視
@@ -1064,13 +1064,17 @@ async function humStart(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nomic');
   try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
   hum.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  hum.src = ctx.createMediaStreamSource(hum.stream);
-  hum.an = ctx.createAnalyser(); hum.an.fftSize = 2048; hum.src.connect(hum.an);
+  const AC = window.AudioContext || window.webkitAudioContext;
+  hum.ctx = new AC();                                     // ⚠マイクを開いた後に作る＝マイクと同じレートになる
+  if (hum.ctx.state !== 'running') { try { await hum.ctx.resume(); } catch (e) {} }
+  hum.src = hum.ctx.createMediaStreamSource(hum.stream);
+  hum.an = hum.ctx.createAnalyser(); hum.an.fftSize = 2048; hum.src.connect(hum.an);
+  const mute = hum.ctx.createGain(); mute.gain.value = 0; hum.an.connect(mute).connect(hum.ctx.destination); // iPhoneは出口につながないと計算しないことがある
   hum.buf = new Float32Array(hum.an.fftSize); hum.frames = []; hum.heard = 0;
   hum.timer = setInterval(() => {
     if (!hum.an || !ctx) return;
     hum.an.getFloatTimeDomainData(hum.buf);
-    const f = detectPitch(hum.buf, ctx.sampleRate);
+    const f = detectPitch(hum.buf, hum.ctx.sampleRate);
     const m = f ? 69 + 12 * Math.log2(f / 440) : null;
     hum.frames.push({ t: ctx.currentTime - 0.023, m });                // バッファの真ん中の時刻
     hum.heard = (hum.heard || 0) + (m == null ? 0 : 1);
@@ -1083,7 +1087,8 @@ function humStop(){
   if (hum.shown != null) keyOn(hum.shown, false); hum.shown = null;
   try { hum.src && hum.src.disconnect(); } catch (e) {}
   if (hum.stream) hum.stream.getTracks().forEach(t => t.stop());
-  hum.stream = hum.src = hum.an = null;
+  if (hum.ctx) hum.ctx.close().catch(() => {});
+  hum.stream = hum.src = hum.an = hum.ctx = null;
   applySilentMode();
 }
 function paintInput(){ $('#inputSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (settings.recInput || 'keys') ? 'true' : 'false')); }
