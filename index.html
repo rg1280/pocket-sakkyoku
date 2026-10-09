@@ -1017,9 +1017,10 @@ function recStop(silent){
    マイクの音から音の高さを読み取り（自己相関＝YIN の簡易版）、0.02秒ごとの高さを音符にまとめる。
    声そのものは保存しない。残すのは読み取った高さと長さだけ。⚠伴奏を鳴らすならイヤホン必須（マイクが拾う） */
 const hum = { stream: null, ctx: null, src: null, an: null, buf: null, frames: [], timer: null, shown: null };
-function detectPitch(x, sr){
+function detectPitch(x, sr, gate){
   let rms = 0; for (let i = 0; i < x.length; i++) rms += x[i] * x[i];
-  if (Math.sqrt(rms / x.length) < 0.012) return null;            // 小さすぎる音は無視
+  rms = Math.sqrt(rms / x.length); hum.lastRms = rms;
+  if (rms < (gate || 0.012)) return null;                        // 周りの雑音より小さい音は無視
   const minLag = Math.floor(sr / 1000), maxLag = Math.min(Math.floor(sr / 70), (x.length >> 1) - 2), W = x.length >> 1;
   const d = new Float32Array(maxLag + 2); let run = 0; d[0] = 1;
   for (let lag = 1; lag <= maxLag + 1; lag++) {
@@ -1027,8 +1028,8 @@ function detectPitch(x, sr){
     run += sum; d[lag] = run ? sum * lag / run : 1;                  // 累積平均で割った差分（YIN）
   }
   let lag = -1;
-  for (let l = minLag; l <= maxLag; l++) { if (d[l] < 0.15) { while (l + 1 <= maxLag && d[l + 1] < d[l]) l++; lag = l; break; } }
-  if (lag < 0) return null;
+  for (let l = minLag; l <= maxLag; l++) { if (d[l] < 0.25) { while (l + 1 <= maxLag && d[l + 1] < d[l]) l++; lag = l; break; } }
+  if (lag < 0) { let best = 1e9; for (let l = minLag; l <= maxLag; l++) if (d[l] < best) { best = d[l]; lag = l; } if (best >= 0.5) return null; }
   const a = d[lag - 1], b = d[lag], c = d[lag + 1], den = a + c - 2 * b;
   const best = den ? lag + (a - c) / (2 * den) : lag;               // 放物線で細かく合わせる
   return sr / best;
@@ -1042,7 +1043,7 @@ function framesToNotes(frames){
   const notes = []; let cur = null, off = 0, diff = 0;
   const close = t => { if (cur && t - cur.t0 >= 0.09) { const v = cur.vals.sort((x, y) => x - y); notes.push({ p: Math.round(v[v.length >> 1]), t0: cur.t0, t1: t }); } cur = null; };
   med.forEach(f => {
-    if (f.m == null) { if (cur && ++off >= 2) close(f.t); return; }
+    if (f.m == null) { if (cur && ++off >= 4) close(f.t); return; }   // 0.08秒までの途切れは同じ音として続ける
     off = 0;
     if (!cur) { cur = { t0: f.t, vals: [f.m] }; diff = 0; return; }
     const centre = Math.round(cur.vals.slice(-8).sort((x, y) => x - y)[Math.min(cur.vals.length, 8) >> 1]);
@@ -1063,18 +1064,23 @@ function micMessage(err){
 async function humStart(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nomic');
   try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
-  hum.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  hum.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
   const AC = window.AudioContext || window.webkitAudioContext;
   hum.ctx = new AC();                                     // ⚠マイクを開いた後に作る＝マイクと同じレートになる
   if (hum.ctx.state !== 'running') { try { await hum.ctx.resume(); } catch (e) {} }
   hum.src = hum.ctx.createMediaStreamSource(hum.stream);
-  hum.an = hum.ctx.createAnalyser(); hum.an.fftSize = 2048; hum.src.connect(hum.an);
+  hum.an = hum.ctx.createAnalyser(); hum.an.fftSize = 2048;
+  const hp = hum.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70;     // 声の帯域だけ残す
+  const lp = hum.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1100;
+  hum.src.connect(hp).connect(lp).connect(hum.an); hum.floor = 0.01;
   const mute = hum.ctx.createGain(); mute.gain.value = 0; hum.an.connect(mute).connect(hum.ctx.destination); // iPhoneは出口につながないと計算しないことがある
   hum.buf = new Float32Array(hum.an.fftSize); hum.frames = []; hum.heard = 0;
   hum.timer = setInterval(() => {
     if (!hum.an || !ctx) return;
     hum.an.getFloatTimeDomainData(hum.buf);
-    const f = detectPitch(hum.buf, hum.ctx.sampleRate);
+    const f = detectPitch(hum.buf, hum.ctx.sampleRate, Math.max(0.003, hum.floor * 1.6));
+    // 周りの雑音の大きさを覚えておく（静かなときは素早く下げ、歌っている間はゆっくり上げる）
+    hum.floor = hum.lastRms < hum.floor ? hum.lastRms : hum.floor * 1.003;
     const m = f ? 69 + 12 * Math.log2(f / 440) : null;
     hum.frames.push({ t: ctx.currentTime - 0.023, m });                // バッファの真ん中の時刻
     hum.heard = (hum.heard || 0) + (m == null ? 0 : 1);
