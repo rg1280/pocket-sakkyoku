@@ -959,7 +959,8 @@ function recStart(opts){
   if (!opts.at) stopPlayback();
   if (!cur()) newSong('');
   // 鼻歌でリズムが止まっているときは、リズムを鳴らさずにすぐ録る（伴奏はあとで「調整」で付けられる）
-  const humFree = false; // 鼻歌録音は廃止
+  // リズムを止めているときは、リズムを鳴らさず押した瞬間から録る（伴奏はあとで「調整」で付けられる）
+  const humFree = !metro.on && !opts.at;
   const fresh = !metro.on && !opts.at && !humFree, t0 = ctx.currentTime + 0.1;
   if (opts.at) metroStart(opts.at, 0);   // 組み立て：前の部分を流し終えた瞬間から録る（カウントなし）
   else if (fresh) metroStart(t0, 1); // 1 bar count-in (no chord during it)
@@ -1392,7 +1393,7 @@ function frame(){
     if (rec.active) {
       const b = (now - rec.start) / (60 / rec.bpm);
       if (b < 0) setStatus(b < -rec.beats ? '次の小節から録音…' : 'カウント ' + Math.ceil(-b));
-      else if (rec.free) setStatus('停止（' + Math.floor(now - rec.start) + '秒' + (hum.stream ? (hum.shown != null ? '・聞こえています' : '・歌ってください') : '・マイク準備中') + '）');
+      else if (rec.free) setStatus('停止（' + Math.floor(now - rec.start) + '秒）');
       else setStatus('停止（' + (Math.floor(b / rec.beats) + 1) + '小節目' + (rec.mode === 'hum' && hum.stream ? (hum.shown != null ? '・聞こえています' : '') : '') + '）');
     }
     if (pending) { const l = play.id === pending.take.id ? '■ 止める' : '▶ 聴いてみる'; if ($('#savePlay').textContent !== l) $('#savePlay').textContent = l; }
